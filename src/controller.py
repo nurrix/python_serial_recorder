@@ -4,6 +4,7 @@ import pandas as pd
 import serial
 from typing import TYPE_CHECKING, Optional
 import logging
+import weakref
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ class SerialController:
         self.view.after(100, self.waiting_for_port_selection)
         self.current_data: pd.DataFrame = pd.DataFrame()
         
-        threading.Thread(target=self.update_lines, name="Line Updater").start()
+        threading.Thread(target=self.update_lines, name="Line Updater", daemon=True).start()
         
 
     def waiting_for_port_selection(self) -> None:

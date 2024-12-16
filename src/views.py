@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
-
+import weakref
 
 import logging
 
@@ -125,12 +125,12 @@ class SerialApp(tk.Frame):
         if selected_port in available_ports:
             self.port_combobox.set(selected_port)  # Keep the previously selected port.
         elif available_ports:
-            self.port_combobox.set(available_ports[0])  # Set to first available port
+            self.port_combobox.set(available_ports[-1])  # Set to first available port
         else:
             self.port_combobox.set('')  # Clear if no ports available
         
 
     def on_close(self):
         self.controller.close_connection()
-        self.destroy()
         self.master.quit()  # Close the Tkinter window
+        

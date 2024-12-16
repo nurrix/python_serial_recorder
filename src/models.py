@@ -1,5 +1,4 @@
 
-import numpy as np
 import serial
 import serial.tools.list_ports
 import threading
@@ -39,7 +38,7 @@ class SerialModel:
         try:
             self.serial_connection = serial.Serial(port, baudrate)
             self.L = L
-            self.read_thread = threading.Thread(target=self.start_continuous_read_from_serial, name="SerialReader")
+            self.read_thread = threading.Thread(target=self.start_continuous_read_from_serial, name="SerialReader", daemon=True)
             
             self.read_thread.start()
             
@@ -79,8 +78,8 @@ class SerialModel:
                 dfnew = pd.DataFrame(data_integers,columns=column_names,index=range(counter, counter+num_rows))
                 counter += num_rows
                 self.update_df(df2=dfnew)
-                
-            time.sleep(updaterate_sec)
+            if self.is_connected:  
+                time.sleep(updaterate_sec)
 
     def close_connection(self) -> None:
         """Close the serial connection."""
@@ -88,7 +87,9 @@ class SerialModel:
             
             self.on_read(False)
             self.serial_connection.close()
+            logger.info("Closed connection")
             self.read_thread.join()  # Wait for the read thread to finish
+            logger.info("joined connection")
 
 
     def get_available_ports(self) -> list[str]:

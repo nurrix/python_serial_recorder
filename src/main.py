@@ -3,7 +3,7 @@ from controller import SerialController
 from models import SerialModel
 from views import SerialApp
 import logging
-
+import sys
 
 # Set up basic configuration for logging
 logging.basicConfig(level=logging.DEBUG, 
@@ -32,4 +32,6 @@ if __name__== "__main__":
     logger.info("Starting...")
     main()
     logger.info("Exititing...")
+    sys.exit()
+    
     
