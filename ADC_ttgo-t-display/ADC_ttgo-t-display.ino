@@ -1,7 +1,7 @@
 // Author: Steffen Frahm, ksf@hst.aau.dk 
 hw_timer_t * timer = NULL;
 
-#define number_of_channels 1
+#define number_of_channels 2
 #define BAUDRATE 115200
 uint8_t channels[number_of_channels] = {A0};//,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13,A14,A15};
 
