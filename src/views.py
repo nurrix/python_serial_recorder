@@ -107,24 +107,6 @@ class View(tk.Frame):
             "orange",
             "purple",
             "brown",
-            "pink",
-            "lime",
-            "indigo",
-            "violet",
-            "darkgreen",
-            "lightgreen",
-            "lightcoral",
-            "darkblue",
-            "gold",
-            "silver",
-            "beige",
-            "tan",
-            "chocolate",
-            "seashell",
-            "tomato",
-            "orchid",
-            "salmon",
-            "peachpuff",
         ]
 
         if self.lines is None:
@@ -157,7 +139,7 @@ class View(tk.Frame):
     def on_connect(self):
         """Connect to the selected COM port and baudrate."""
         try:
-            port = self.port.get()
+            port: str = self.port.get()
             baudrate = int(self.baudrate.get())
             samples_per_channel = int(self.samples_per_channel.get())
             if not port:

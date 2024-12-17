@@ -1,9 +1,7 @@
-import threading
-import time
 from tkinter import filedialog
 from pandas import DataFrame
 import serial
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 import logging
 
 from models import Model
