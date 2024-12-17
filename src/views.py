@@ -6,28 +6,27 @@ from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 
 import logging
-
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
 logging.getLogger("PIL").setLevel(
     logging.WARNING
-)  # Suppress debug/info messages from requests
+)  # Suppress debug/info messages from Pillow
 logging.getLogger("matplotlib").setLevel(
     logging.WARNING
-)  # Suppress debug/info messages from requests
+)  # Suppress debug/info messages from matplotlib
 
 if TYPE_CHECKING:
-    from controller import SerialController  # Only imported for type hinting
+    from controller import Controller  # Only imported for type hinting
 
 
-class SerialApp(tk.Frame):
-    def __init__(self, master: tk.Toplevel):
+class View(tk.Frame):
+    def __init__(self, master: tk.Toplevel) -> None:
         super().__init__(master)
         self.master = master
         self.setup_ui()
 
-        self.master.protocol("WM_DELETE_WINDOW", self.on_close)
         self.pack(fill="both", expand=True)
 
     def on_key_press(self, event: tk.Event):
@@ -41,47 +40,41 @@ class SerialApp(tk.Frame):
                 self.controller.snapshot_show()
                 self.after(0, self.controller.save_snapshot)
 
-    def set_controller(self, controller: "SerialController"):
+    def set_controller(self, controller: "Controller"):
         self.controller = controller
 
     def setup_ui(self):
+        """Setup of UI elements"""
         # COM Port Dropdown
-        self.port_label = tk.Label(self, text="Select COM Port:")
-        self.port_label.pack(pady=5)
+        tk.Label(self, text="Select COM Port:").pack(pady=5)
 
-        self.port_combobox = ttk.Combobox(self, state="readonly", width=20)
-        self.port_combobox.pack(pady=5)
+        self.port = ttk.Combobox(self, state="readonly", width=20)
+        self.port.pack(pady=5)
 
         # Baudrate Dropdown
-        self.baudrate_label = tk.Label(self, text="Select Baudrate:")
-        self.baudrate_label.pack(pady=5)
+        tk.Label(self, text="Select Baudrate:").pack(pady=5)
 
-        self.baudrate_combobox = ttk.Combobox(
+        self.baudrate = ttk.Combobox(
             self, values=[9600, 115200], state="readonly", width=20
         )
-        self.baudrate_combobox.set(115200)
-        self.baudrate_combobox.pack(pady=5)
+        self.baudrate.set(115200)
+        self.baudrate.pack(pady=5)
 
-        # Sampling Rate Dropdown
-        self.sampling_rate_label = tk.Label(self, text="Select Sampling Rate (ms):")
-        self.sampling_rate_label.pack(pady=5)
-
-        # Sampling Rate Dropdown
-        self.sampling_rate_label = tk.Label(
-            self, text="Select Number of samples (per channel):"
-        )
-        self.sampling_rate_label.pack(pady=5)
-        self.duration_box = tk.Spinbox(
+        # Number of Samples Dropdown
+        tk.Label(self, text="Select Number of samples (per channel):").pack(pady=5)
+        self.samples_per_channel = tk.Spinbox(
             self,
             from_=100,
             to=100_000,
             increment=100,
         )
-        self.duration_box.pack(pady=20)
+        self.samples_per_channel.pack(pady=20)
 
         # Connect Button
-        self.connect_button = tk.Button(self, text="Connect", command=self.on_connect)
-        self.connect_button.pack(pady=10, fill="x")
+        self.connect_button = tk.Button(
+            self, text="Connect", command=self.on_connect, width=20
+        )
+        self.connect_button.pack(pady=10)
 
         # Matplotlib Plot Area (Embedded)
         self.fig, self.ax = plt.subplots()
@@ -97,8 +90,6 @@ class SerialApp(tk.Frame):
             fill="both",
             expand=True,
         )
-
-        self.data = []  # Store the data for plotting
 
     def display_data(self, data: pd.DataFrame):
         """Update the graph with new data."""
@@ -137,6 +128,7 @@ class SerialApp(tk.Frame):
         ]
 
         if self.lines is None:
+            # Initiate lines in figure
             self.lines = []
             for idx, name in enumerate(data.columns):
                 line = Line2D(
@@ -151,8 +143,8 @@ class SerialApp(tk.Frame):
         else:
             # Update the plot
             for idx, name in enumerate(data.columns):
-                self.lines[idx].set_ydata(data[name])
                 self.lines[idx].set_xdata(data.index.to_list())
+                self.lines[idx].set_ydata(data[name])
 
         self.ax.relim()  # Recalculate limits
         self.ax.autoscale_view()
@@ -165,9 +157,9 @@ class SerialApp(tk.Frame):
     def on_connect(self):
         """Connect to the selected COM port and baudrate."""
         try:
-            port = self.port_combobox.get()
-            baudrate = int(self.baudrate_combobox.get())
-            samples_per_channel = int(self.duration_box.get())
+            port = self.port.get()
+            baudrate = int(self.baudrate.get())
+            samples_per_channel = int(self.samples_per_channel.get())
             if not port:
                 raise ValueError("Please select a COM port.")
             if baudrate <= 0:
@@ -187,27 +179,24 @@ class SerialApp(tk.Frame):
     def update_ports(self, available_ports):
         """Update the available ports dropdown. Preserve the selected port if still available."""
         # If the previously selected port is still available, keep it selected.
-        if set(available_ports) == set(self.port_combobox["values"]):
+        if set(available_ports) == set(self.port["values"]):
             return
-        selected_port = self.port_combobox.get()
-        self.port_combobox["values"] = available_ports
+        selected_port = self.port.get()
+        self.port["values"] = available_ports
         if selected_port in available_ports:
-            self.port_combobox.set(selected_port)  # Keep the previously selected port.
+            self.port.set(selected_port)  # Keep the previously selected port.
         elif available_ports:
-            self.port_combobox.set(available_ports[-1])  # Set to first available port
+            self.port.set(available_ports[-1])  # Set to first available port
         else:
-            self.port_combobox.set("")  # Clear if no ports available
+            self.port.set("")  # Clear if no ports available
 
-    def on_close(self):
-        self.after(0, self.controller.close_connection)
-        self.after(0, self.master.quit)  # Close the Tkinter window
-
-    def disable_buttons(self):
+    def update_ui_elements(self):
+        """disable buttons and dropdows,"""
         # activate keybindings
         self.master.bind("<KeyPress>", self.on_key_press)
 
         # disable buttons
-        self.port_combobox.config(state="disabled")
-        self.baudrate_combobox.config(state="disabled")
+        self.port.config(state="disabled")
+        self.baudrate.config(state="disabled")
         self.connect_button.config(state="disabled")
-        self.duration_box.config(state="disabled")
+        self.samples_per_channel.config(state="disabled")

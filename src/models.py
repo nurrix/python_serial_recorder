@@ -4,11 +4,21 @@ import threading
 import time
 from typing import Optional
 import pandas as pd
+import numpy as np
 
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def row_col_count(data) -> tuple[int, int]:
+    num_rows: int = len(data)
+    if num_rows == 0:
+        num_cols = 0
+    else:
+        num_cols = len(data[0])
+    return num_rows, num_cols
 
 
 def contains_only_numbers(row):
@@ -21,13 +31,13 @@ def convert_to_numbers(data: str):
     return list(map(int, data.split(" ")))
 
 
-class SerialModel:
+class Model:
     def __init__(self):
         self.serial_connection: Optional[serial.Serial] = None
-        self.read_thread = None
+        self.read_thread: Optional[threading.Thread] = None
         self.is_reading = False
-        self.SAMPLES_PER_CHANNEL = None
-        self.df = pd.DataFrame()
+        self.SAMPLES_PER_CHANNEL: int | None = None
+        self.__buffer = pd.DataFrame()
         self.__df_update_lock = threading.Lock()
 
     def open_connection(
@@ -56,56 +66,75 @@ class SerialModel:
 
         logger.info(f"Opened serial connection port:{port}, baudrate:{baudrate}")
 
-    def start_continuous_read_from_serial(self, updaterate_sec: float = 2**-6):
+    def start_continuous_read_from_serial(self, updaterate_sec: float = 1 / 50):
         """Continuously read data from the serial port in a background thread."""
-        logger.info("Started Continuous read from serialport")
-
-        if updaterate_sec <= 0.0:
-            raise serial.SerialException(
-                f"Error: updaterate should be a possitive number"
-            )
+        # write to esp32, that it needs to write data
         self.on_read(flag=True)
-        rest = ""
-        counter = 0
+        rest: str = ""
+        counter: int = 0
         while self.is_connected:
-            if not self.serial_connection.is_open:
-                break
             try:
-                available_bytes = self.serial_connection.in_waiting
+                available_bytes: int = self.serial_connection.in_waiting
             except Exception:
                 available_bytes = 0
 
-            if available_bytes:
-                # read n available bytes from serial connection (bytes)
-                ascii_data = (
-                    rest + self.serial_connection.read(available_bytes).decode()
-                )
-                # Seperate each row of data
-                row_asci_data = ascii_data.split("\r\n")
-                rest = row_asci_data[-1]
-                data_to_analyze = row_asci_data[:-2]
-                # remove rows where there are non-numeric data, split by " ", and convert to int
-                new_data = filter(contains_only_numbers, data_to_analyze)
-                data_integers = list(map(convert_to_numbers, new_data))
-
-                num_rows = len(data_integers)
-                if num_rows == 0:
-                    continue
-                num_channels = len(data_integers[0])
-
-                if num_channels == 0:
-                    continue
-
-                column_names = [f"Ch{i}" for i in range(num_channels)]
-                dfnew = pd.DataFrame(
-                    data_integers,
-                    columns=column_names,
-                    index=range(counter, counter + num_rows),
-                )
-                counter += num_rows
-                self.update_df(df2=dfnew)
-            if self.is_connected:
+            if available_bytes == 0:
                 time.sleep(updaterate_sec)
+                continue
+            # read n available bytes from serial connection (bytes)
+            ascii_data: str = (
+                rest + self.serial_connection.read(available_bytes).decode()
+            )
+            # Seperate each row of data
+            row_asci_data: list[str] = ascii_data.split("\r\n")
+            rest: str = row_asci_data[-1]
+            if len(row_asci_data) < 2:
+                continue
+
+            data: list[str] = row_asci_data[:-2]
+            # remove rows where there are non-numeric data, split by " ", and convert to int
+            data_filtered: list[str] = filter(contains_only_numbers, data)
+            data_integers: list[list[int]] = list(
+                map(convert_to_numbers, data_filtered)
+            )
+
+            # get number of rows and channels in new data
+            num_rows, num_channels = row_col_count(data_integers)
+            if num_rows == 0 or num_channels == 0:
+                # If there are no rows, or no columns, skip rest
+                continue
+
+            # create a dataframe with the new data
+            column_names: list[str] = [f"Ch{i}" for i in range(num_channels)]
+            dfnew = pd.DataFrame(
+                data_integers,
+                columns=column_names,
+                index=range(counter, counter + num_rows),
+            )
+            self.update_df(data=dfnew)
+            counter += num_rows
+            # Sleep for a short duration
+            time.sleep(updaterate_sec)
+
+    def update_df(self, data: pd.DataFrame) -> None:
+        """append new data to buffer"""
+        with self.__df_update_lock:
+            if self.__buffer.shape[1] != data.shape[1]:
+                # If the number of columns of the df has changed, reinitialize the dataframe
+                logger.debug("Resizing buffer")
+                self.__buffer = pd.DataFrame(
+                    np.zeros([self.SAMPLES_PER_CHANNEL, data.shape[1]], dtype=int),
+                    columns=data.columns,
+                )
+            # Append new data to buffer
+            self.__buffer: pd.DataFrame = pd.concat(
+                [self.__buffer, data], ignore_index=True
+            )
+
+            # Drop rows with the smallest indices
+            index = self.__buffer.index[: -self.SAMPLES_PER_CHANNEL]
+            self.__buffer.drop(index=index, inplace=True)
+            self.__buffer.reset_index(drop=True, inplace=True)
 
     def close_connection(self) -> None:
         """Close the serial connection."""
@@ -119,63 +148,50 @@ class SerialModel:
     def get_available_ports(self) -> list[str]:
         """Get the list of available COM ports."""
         try:
-            ports = [port.device for port in serial.tools.list_ports.comports()]
+            ports: list[str] = [
+                port.device for port in serial.tools.list_ports.comports()
+            ]
             if not ports:
                 return []
             return sorted(list(set(ports)))
         except serial.SerialException as e:
             raise e  # Raise the exception to be handled in the controller/view
 
-    def on_read(self, flag: bool):
+    def on_read(self, flag: bool) -> None:
+        """write a byte ('s' or 'e') to com-port, depending on flag"""
         if not self.is_connected:
-            self.is_reading = flag
+            self.is_reading: bool = False
             logger.error("No established Connection >> Cant start reading")
+            return
 
         self.is_reading = flag
+        # write 's' or 'e' to com-port
+        msg = b"s" if flag else b"e"
+        try:
+            self.serial_connection.write(msg)
+        except serial.SerialException as e:
+            logger.error(str(e))
 
-        if self.is_reading:
-            self.serial_connection.write(b"s")
-        else:
-            self.serial_connection.write(b"e")
-
-    def update_df(self, df2: pd.DataFrame):
+    def set_snapshot(self) -> None:
+        """copy current buffer into a snapshot"""
         with self.__df_update_lock:
-            if self.df.shape[1] != df2.shape[1]:
-                logger.info("Resetting size of df")
-                self.df = pd.DataFrame(
-                    0,
-                    columns=df2.columns,
-                    index=range(
-                        df2.index[0] - 1, df2.index[0] - self.SAMPLES_PER_CHANNEL
-                    ),
-                )
-            self.df = pd.concat([self.df, df2])
-
-            # If the DataFrame's length exceeds L, drop the rows with the lowest indices
-            if len(self.df) > self.SAMPLES_PER_CHANNEL:
-                # Drop rows with the smallest indices
-                self.df = self.df.loc[self.df.index[-self.SAMPLES_PER_CHANNEL :]]
-
-    def set_snapshot(self):
-        with self.__df_update_lock:
-            self.snapshot = self.df.copy()
+            self.__snapshot: pd.DataFrame = self.__buffer.copy()
 
     def get_snapshot(self, is_frozen: bool) -> pd.DataFrame:
         with self.__df_update_lock:
             if is_frozen:
-                return self.snapshot.copy()
-            return self.df.copy()
+                return self.__snapshot.copy()
+            return self.__buffer.copy()
 
     @property
-    def is_connected(self):
-        if (
+    def is_connected(self) -> bool:
+        """Return True if serial is connected to COM port"""
+        return (
             self.serial_connection
             and self.serial_connection.is_open
             and self.read_thread.is_alive
-        ):
-            return True
-        return False
+        )
 
-    def __del__(self):
-        logger.debug("Destroying...")
+    def __del__(self) -> None:
+        """destructor"""
         self.close_connection()
