@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
-import weakref
 
 import logging
 
@@ -90,7 +89,7 @@ class SerialApp(tk.Frame):
         self.ax.set_xlabel("Samples")
         self.ax.set_ylabel("ADC Output")
         # self.ax.legend()
-        self.line: list[Line2D] | None = None
+        self.lines: list[Line2D] | None = None
 
         self.canvas = FigureCanvasTkAgg(self.fig, self)
         self.canvas.get_tk_widget().pack(
@@ -137,23 +136,23 @@ class SerialApp(tk.Frame):
             "peachpuff",
         ]
 
-        if self.line is None:
-            self.line = []
+        if self.lines is None:
+            self.lines = []
             for idx, name in enumerate(data.columns):
-                l = Line2D(
+                line = Line2D(
                     data.index,
                     data[name],
                     label=name,
                     color=named_colors[idx % len(named_colors)],
                 )
-                self.line.append(l)
-                self.ax.add_line(l)
+                self.lines.append(line)
+                self.ax.add_line(line)
             self.ax.legend()
         else:
             # Update the plot
             for idx, name in enumerate(data.columns):
-                self.line[idx].set_ydata(data[name])
-                self.line[idx].set_xdata(data.index.to_list())
+                self.lines[idx].set_ydata(data[name])
+                self.lines[idx].set_xdata(data.index.to_list())
 
         self.ax.relim()  # Recalculate limits
         self.ax.autoscale_view()
