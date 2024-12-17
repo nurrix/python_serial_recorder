@@ -17,15 +17,29 @@ logging.getLogger('matplotlib').setLevel(logging.WARNING)  # Suppress debug/info
 if TYPE_CHECKING:
     from controller import SerialController  # Only imported for type hinting
 class SerialApp(tk.Frame):
-    def __init__(self, master:tk.Toplevel=None):
-        super().__init__(master, width=800, height=600)
+    def __init__(self, master:tk.Toplevel):
+        
+            
+        super().__init__(master)
         self.master = master
         self.setup_ui()
         
         self.master.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.pack(fill="both", expand=True)
         
-        self.pack()
-        
+    def on_key_press(self, event: tk.Event):
+        """ key press handler """
+        match(event.keysym):
+            case 'space':
+                logger.info(f'Pressed {event.keysym}')
+                # This should stop the ui updater, and simply keep the snapshot
+                self.controller.snapshot_show()
+            case 's' | 'S':
+                logger.info(f'Pressed {event.keysym}')
+                # This should save the ui.  
+                self.controller.snapshot_show()
+                self.after(0,self.controller.save_snapshot)
+    
     def set_controller(self, controller: "SerialController"):
         self.controller = controller
 
@@ -50,35 +64,50 @@ class SerialApp(tk.Frame):
         self.sampling_rate_label = tk.Label(self, text="Select Sampling Rate (ms):")
         self.sampling_rate_label.pack(pady=5)
 
-        self.sampling_rate_combobox = ttk.Combobox(self, values=[1000, 500, 2000], state="readonly", width=20)
-        self.sampling_rate_combobox.set(1000)
-        self.sampling_rate_combobox.pack(pady=5)
+        
+        
+        # Sampling Rate Dropdown
+        self.sampling_rate_label = tk.Label(self, text="Select Number of samples (per channel):")
+        self.sampling_rate_label.pack(pady=5)
+        self.duration_box = tk.Spinbox(self, from_=100, to=100_000, increment=100,)  
+        self.duration_box.pack(pady=20)
+
 
         # Connect Button
         self.connect_button = tk.Button(self, text="Connect", command=self.on_connect)
-        self.connect_button.pack(pady=10)
+        self.connect_button.pack(pady=10, fill='x')
 
         # Matplotlib Plot Area (Embedded)
-        self.fig, self.ax = plt.subplots(figsize=(6, 4))
+        self.fig, self.ax = plt.subplots()
         self.ax.set_title("Real-time ADC Data")
         self.ax.set_xlabel("Samples")
         self.ax.set_ylabel("ADC Output")
-        self.ax.legend()
-        self.line: list[Line2D] = None
+        #self.ax.legend()
+        self.line: list[Line2D]|None = None
 
         self.canvas = FigureCanvasTkAgg(self.fig, self)
-        self.canvas.get_tk_widget().pack(pady=10)
+        self.canvas.get_tk_widget().pack(pady=10, fill='both', expand=True,)
 
         self.data = []  # Store the data for plotting
 
     def display_data(self, data: pd.DataFrame):
         """Update the graph with new data."""
+        named_colors = [
+        'blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 
+        'black', 'white', 'gray', 'lightblue', 'orange', 
+        'purple', 'brown', 'pink', 'lime', 'indigo', 'violet', 
+        'darkgreen', 'lightgreen', 'lightcoral', 'darkblue', 
+        'gold', 'silver', 'beige', 'tan', 'chocolate', 
+        'seashell', 'tomato', 'orchid', 'salmon', 'peachpuff'
+        ]
+
         if self.line is None:
             self.line = []
             for idx, name in enumerate(data.columns):
-                l = Line2D(data.index, data[name], label=name,)
+                l = Line2D(data.index, data[name], label=name, color=named_colors[idx%len(named_colors)])
                 self.line.append(l)
                 self.ax.add_line(l)
+            self.ax.legend()
         else:
             # Update the plot
             for idx, name in enumerate(data.columns):
@@ -98,14 +127,13 @@ class SerialApp(tk.Frame):
         try:
             port = self.port_combobox.get()
             baudrate = int(self.baudrate_combobox.get())
-            sampling_rate = int(self.sampling_rate_combobox.get())
-            duration = 5
+            samples_per_channel = int(self.duration_box.get())
             if not port:
                 raise ValueError("Please select a COM port.")
             if baudrate <= 0:
                 raise ValueError("Please select a valid baudrate.")
 
-            self.controller.open_connection(port, baudrate, sampling_rate, duration)
+            self.controller.open_connection(port=port, baudrate=baudrate, samples_per_channel=samples_per_channel)
 
         except ValueError as e:
             logger.error(str(e))
@@ -129,8 +157,16 @@ class SerialApp(tk.Frame):
         else:
             self.port_combobox.set('')  # Clear if no ports available
         
-
     def on_close(self):
         self.controller.close_connection()
         self.master.quit()  # Close the Tkinter window
         
+    def disable_buttons(self):
+        # activate keybindings
+        self.master.bind("<KeyPress>", self.on_key_press)
+        
+        # disable buttons
+        self.port_combobox.config(state="disabled")
+        self.baudrate_combobox.config(state="disabled")
+        self.connect_button.config(state="disabled")
+        self.duration_box.config(state="disabled")

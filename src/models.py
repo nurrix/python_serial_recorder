@@ -25,11 +25,11 @@ class SerialModel:
         self.serial_connection: Optional[serial.Serial] = None
         self.read_thread = None
         self.is_reading = False
-        self.L = None
+        self.SAMPLES_PER_CHANNEL = None
         self.df = pd.DataFrame()
         self.__df_update_lock = threading.Lock()
 
-    def open_connection(self, port: str, baudrate: int, L:int, ) -> tuple[bool, Optional[str]]:
+    def open_connection(self, port: str, baudrate: int, samples_per_channel:int, ) -> tuple[bool, Optional[str]]:
         """Open a serial connection and start reading in a separate thread."""
         if self.is_connected:
             
@@ -37,7 +37,7 @@ class SerialModel:
 
         try:
             self.serial_connection = serial.Serial(port, baudrate)
-            self.L = L
+            self.SAMPLES_PER_CHANNEL = samples_per_channel
             self.read_thread = threading.Thread(target=self.start_continuous_read_from_serial, name="SerialReader", daemon=True)
             
             self.read_thread.start()
@@ -118,21 +118,25 @@ class SerialModel:
         with self.__df_update_lock:
             if self.df.shape[1] != df2.shape[1]:
                 logger.info("Resetting size of df")
-                self.df = pd.DataFrame(0,columns=df2.columns,index=range(df2.index[0]-1,df2.index[0]-self.L))
+                self.df = pd.DataFrame(0,columns=df2.columns,index=range(df2.index[0]-1,df2.index[0]-self.SAMPLES_PER_CHANNEL))
             self.df = pd.concat([self.df, df2])
             
             # If the DataFrame's length exceeds L, drop the rows with the lowest indices
-            if len(self.df) > self.L:
+            if len(self.df) > self.SAMPLES_PER_CHANNEL:
                 # Drop rows with the smallest indices
-                self.df = self.df.loc[self.df.index[-self.L:]]
-            
+                self.df = self.df.loc[self.df.index[-self.SAMPLES_PER_CHANNEL:]]
+    
+    def set_snapshot(self):
+        with self.__df_update_lock:
+            self.snapshot = self.df.copy()
+    
+    def get_snapshot(self, is_frozen: bool) -> pd.DataFrame:
+        with self.__df_update_lock:
+            if is_frozen:
+                return self.snapshot.copy()
+            return self.df.copy()
             
         
-    @property
-    def shapshot(self) -> pd.DataFrame | None:
-        with self.__df_update_lock:
-            df = self.df.copy()
-        return df
     
     @property
     def is_connected(self):

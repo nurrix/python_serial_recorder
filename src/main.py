@@ -16,20 +16,29 @@ def main():
     # Create the Tkinter root window
     root : tk.Toplevel = tk.Tk()
     root.title("Serial Data Viewer")
+    
+    screen_width = root.winfo_screenwidth()
+    screen_height = root.winfo_screenheight()
+    root.geometry(f"{screen_width // 2}x{screen_height // 2}")
     view = SerialApp(master=root)
     model = SerialModel()
     controller = SerialController(model, view)
     view.set_controller(controller=controller)
 
-    logger.info("Running root.mainloop()...")
     # Create the model, view, and controller
     # Start the Tkinter event loop
     root.mainloop()
     
+    # cleanup
+    del controller
+    del model
+    del view
+    del root
+    
     
 
 if __name__== "__main__":
-    logger.info("Starting...")
+    logger.info("Starting Serial Recorder...")
     main()
     logger.info("Exititing...")
     sys.exit()
