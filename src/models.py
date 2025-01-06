@@ -1,18 +1,18 @@
 import serial
-import serial.tools.list_ports
+import serial.tools.list_ports as list_ports
 import threading
 import time
 from typing import Optional
 import pandas as pd
 import numpy as np
 
-
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-def row_col_count(data) -> tuple[int, int]:
+def calculate_2D_matrix(data) -> tuple[int, int]:
+    """ Calculate the number of rows and columns in a 2D matrix."""
     num_rows: int = len(data)
     if num_rows == 0:
         num_cols = 0
@@ -21,18 +21,20 @@ def row_col_count(data) -> tuple[int, int]:
     return num_rows, num_cols
 
 
-def contains_only_numbers(row):
-    # Keep only rows where each character is either a number or a space
+def str_contains_only_numbers(row: str):
+    """ Check if a string contains only numbers and spaces."""
     return row and all(c.isdigit() or c == " " for c in row)
 
 
-def convert_to_numbers(data: str):
-    # converts string to integers
+def str_to_intarray(data: str):
+    """ Convert a string of numbers separated by spaces to a list of integers."""
     return list(map(int, data.split(" ")))
 
 
 class Model:
+    """ Model class for the MVC pattern."""
     def __init__(self):
+        """ Initialize the model."""
         self.serial_connection: Optional[serial.Serial] = None
         self.read_thread: Optional[threading.Thread] = None
         self.is_reading = False
@@ -64,12 +66,10 @@ class Model:
         except serial.SerialException as e:
             raise serial.SerialException(f"Error opening serial port: {str(e)}")
 
-        logger.info(f"Opened serial connection port:{port}, baudrate:{baudrate}")
-
     def start_continuous_read_from_serial(self, updaterate_sec: float = 1 / 50):
         """Continuously read data from the serial port in a background thread."""
         # write to esp32, that it needs to write data
-        self.on_read(flag=True)
+        self.read(flag=True)
         rest: str = ""
         counter: int = 0
         while self.is_connected:
@@ -82,24 +82,20 @@ class Model:
                 time.sleep(updaterate_sec)
                 continue
             # read n available bytes from serial connection (bytes)
-            ascii_data: str = (
-                rest + self.serial_connection.read(available_bytes).decode()
-            )
+            ascii_data: str = rest + self.serial_connection.read(available_bytes).decode()
             # Seperate each row of data
             row_asci_data: list[str] = ascii_data.split("\r\n")
             rest: str = row_asci_data[-1]
             if len(row_asci_data) < 2:
-                continue
+                continue  # If there are less than 2 rows, skip rest
 
             data: list[str] = row_asci_data[:-2]
             # remove rows where there are non-numeric data, split by " ", and convert to int
-            data_filtered: list[str] = filter(contains_only_numbers, data)
-            data_integers: list[list[int]] = list(
-                map(convert_to_numbers, data_filtered)
-            )
+            data_filtered: list[str] = filter(str_contains_only_numbers, data)
+            data_integers: list[list[int]] = list(map(str_to_intarray, data_filtered))
 
             # get number of rows and channels in new data
-            num_rows, num_channels = row_col_count(data_integers)
+            num_rows, num_channels = calculate_2D_matrix(data_integers)
             if num_rows == 0 or num_channels == 0:
                 # If there are no rows, or no columns, skip rest
                 continue
@@ -108,8 +104,8 @@ class Model:
             column_names: list[str] = [f"Ch{i}" for i in range(num_channels)]
             dfnew = pd.DataFrame(
                 data_integers,
-                columns=column_names,
                 index=range(counter, counter + num_rows),
+                columns=column_names,
             )
             self.update_df(data=dfnew)
             counter += num_rows
@@ -117,54 +113,42 @@ class Model:
             time.sleep(updaterate_sec)
 
     def update_df(self, data: pd.DataFrame) -> None:
-        """append new data to buffer"""
+        """Update the buffer with new data."""
         with self.__df_update_lock:
             if self.__buffer.shape[1] != data.shape[1]:
                 # If the number of columns of the df has changed, reinitialize the dataframe
-                logger.debug("Resizing buffer")
+                sz = (self.SAMPLES_PER_CHANNEL, data.shape[1])
                 self.__buffer = pd.DataFrame(
-                    np.zeros([self.SAMPLES_PER_CHANNEL, data.shape[1]], dtype=int),
-                    columns=data.columns,
+                    np.zeros(sz), columns=data.columns, index=range(-self.SAMPLES_PER_CHANNEL, 0), dtype=int
                 )
             # Append new data to buffer
-            self.__buffer: pd.DataFrame = pd.concat(
-                [self.__buffer, data], ignore_index=True
-            )
+            self.__buffer: pd.DataFrame = pd.concat([self.__buffer, data], ignore_index=False)
 
-            # Drop rows with the smallest indices
-            index = self.__buffer.index[: -self.SAMPLES_PER_CHANNEL]
-            self.__buffer.drop(index=index, inplace=True)
-            self.__buffer.reset_index(drop=True, inplace=True)
+            # If the buffer is larger than the specified number of samples, remove the oldest samples
+            if len(self.__buffer) > self.SAMPLES_PER_CHANNEL:
+                self.__buffer: pd.DataFrame = self.__buffer.iloc[-self.SAMPLES_PER_CHANNEL :]
 
     def close_connection(self) -> None:
         """Close the serial connection."""
         if self.is_connected:
-            self.on_read(False)
+            self.read(False)
             self.serial_connection.close()
             logger.info("Closed connection")
-            self.read_thread.join()  # Wait for the read thread to finish
-            logger.info("joined connection")
 
     def get_available_ports(self) -> list[str]:
         """Get the list of available COM ports."""
-        try:
-            ports: list[str] = [
-                port.device for port in serial.tools.list_ports.comports()
-            ]
-            if not ports:
-                return []
-            return sorted(list(set(ports)))
-        except serial.SerialException as e:
-            raise e  # Raise the exception to be handled in the controller/view
+        ports: list[str] = [port.device for port in list_ports.comports()]
+        if not ports:
+            return []
+        return sorted(list(set(ports)))
 
-    def on_read(self, flag: bool) -> None:
+    def read(self, flag: bool) -> None:
         """write a byte ('s' or 'e') to com-port, depending on flag"""
-        if not self.is_connected:
-            self.is_reading: bool = False
-            logger.error("No established Connection >> Cant start reading")
+        self.is_reading = flag and self.is_connected
+        if self.is_disconnected:
+            logger.error("No established Connection >> Cant start/stop reading")
             return
 
-        self.is_reading = flag
         # write 's' or 'e' to com-port
         msg = b"s" if flag else b"e"
         try:
@@ -172,12 +156,18 @@ class Model:
         except serial.SerialException as e:
             logger.error(str(e))
 
-    def set_snapshot(self) -> None:
+    def update_snapshot(self) -> None:
         """copy current buffer into a snapshot"""
         with self.__df_update_lock:
             self.__snapshot: pd.DataFrame = self.__buffer.copy()
 
-    def get_snapshot(self, is_frozen: bool) -> pd.DataFrame:
+    def get_snapshot(self, is_frozen: bool) -> pd.DataFrame | None:
+        """Return a snapshot of the data or the buffer.
+        If is_frozen is True, return a snapshot, else return the buffer.
+        """
+        if not self.is_reading:
+            return None
+
         with self.__df_update_lock:
             if is_frozen:
                 return self.__snapshot.copy()
@@ -186,11 +176,12 @@ class Model:
     @property
     def is_connected(self) -> bool:
         """Return True if serial is connected to COM port"""
-        return (
-            self.serial_connection
-            and self.serial_connection.is_open
-            and self.read_thread.is_alive
-        )
+        return self.serial_connection and self.serial_connection.is_open and self.read_thread.is_alive
+    
+    @property
+    def is_disconnected(self) -> bool:
+        """Return True if serial is connected to COM port is not connected"""
+        return not self.is_connected
 
     def __del__(self) -> None:
         """destructor"""

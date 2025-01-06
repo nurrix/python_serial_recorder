@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from typing import TYPE_CHECKING
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.lines import Line2D
@@ -10,15 +10,28 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-logging.getLogger("PIL").setLevel(
-    logging.WARNING
-)  # Suppress debug/info messages from Pillow
-logging.getLogger("matplotlib").setLevel(
-    logging.WARNING
-)  # Suppress debug/info messages from matplotlib
+logging.getLogger("PIL").setLevel(logging.WARNING)  # Suppress debug/info messages from Pillow
+logging.getLogger("matplotlib").setLevel(logging.WARNING)  # Suppress debug/info messages from matplotlib
+
 
 if TYPE_CHECKING:
     from controller import Controller  # Only imported for type hinting
+
+COLORS = [
+    "blue",
+    "green",
+    "red",
+    "cyan",
+    "magenta",
+    "yellow",
+    "black",
+    "white",
+    "gray",
+    "lightblue",
+    "orange",
+    "purple",
+    "brown",
+]
 
 
 class View(tk.Frame):
@@ -26,17 +39,16 @@ class View(tk.Frame):
         super().__init__(master)
         self.master = master
         self.setup_ui()
-
         self.pack(fill="both", expand=True)
 
     def on_key_press(self, event: tk.Event):
         """key press handler"""
         match event.keysym:
             case "space":
-                # This should stop the ui updater, and simply keep the snapshot
+                # freeze/unfreeze the data, and create a fixed snapshot
                 self.controller.snapshot_show()
             case "s" | "S":
-                # This should save the ui.
+                # Save the snapshot to a file
                 self.controller.snapshot_show()
                 self.after(0, self.controller.save_snapshot)
 
@@ -45,83 +57,77 @@ class View(tk.Frame):
 
     def setup_ui(self):
         """Setup of UI elements"""
-        # COM Port Dropdown
-        tk.Label(self, text="Select COM Port:").pack(pady=5)
+        # Create a frame for the controls and their descriptions
+        control_frame = tk.Frame(self)
+        control_frame.pack(pady=10)
 
-        self.port = ttk.Combobox(self, state="readonly", width=20)
-        self.port.pack(pady=5)
+        # Create a frame for the selection controls
+        selection_frame = tk.Frame(control_frame)
+        selection_frame.grid(row=0, column=0, rowspan=4, padx=5, pady=5, sticky="n")
+
+        # COM Port Dropdown
+        tk.Label(selection_frame, text="Select COM Port:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.port = ttk.Combobox(selection_frame, state="readonly", width=20)
+        self.port.grid(row=0, column=1, padx=5, pady=5)
 
         # Baudrate Dropdown
-        tk.Label(self, text="Select Baudrate:").pack(pady=5)
-
-        self.baudrate = ttk.Combobox(
-            self, values=[9600, 115200], state="readonly", width=20
-        )
+        tk.Label(selection_frame, text="Select Baudrate:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.baudrate = ttk.Combobox(selection_frame, values=[9600, 115200, 921600], state="readonly", width=20)
         self.baudrate.set(115200)
-        self.baudrate.pack(pady=5)
+        self.baudrate.grid(row=1, column=1, padx=5, pady=5)
 
         # Number of Samples Dropdown
-        tk.Label(self, text="Select Number of samples (per channel):").pack(pady=5)
-        self.samples_per_channel = tk.Spinbox(
-            self,
-            from_=100,
-            to=100_000,
-            increment=100,
-        )
-        self.samples_per_channel.pack(pady=20)
+        tk.Label(selection_frame, text="Select Number of samples (per channel):").grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        self.samples_per_channel = tk.IntVar(self,value= 1000)  # Set default value to 1000
+        self.samples_per_channel_spin = tk.Spinbox(selection_frame, from_=10, to=100_000, increment=100, textvariable=self.samples_per_channel)
+        self.samples_per_channel_spin.grid(row=2, column=1, padx=5, pady=5)
 
         # Connect Button
-        self.connect_button = tk.Button(
-            self, text="Connect", command=self.on_connect, width=20
-        )
-        self.connect_button.pack(pady=10)
+        self.connect_button = tk.Button(selection_frame, text="Connect", command=self.on_connect, width=20)
+        self.connect_button.grid(row=3, column=0, columnspan=2, pady=10)
+
+        # Create a frame for the key bindings
+        self.keybindings_frame = tk.Frame(control_frame, bg="white")
+        self.keybindings_frame.grid(row=0, column=1, padx=10, pady=5, sticky="n")
+        self.keybindings_frame.grid_remove()  # Hide initially
+
+        # Key Bindings Explanation
+        tk.Label(self.keybindings_frame, text="Key Bindings:", bg="white").pack(pady=5)
+        tk.Label(self.keybindings_frame, text="[Space]: Freeze / Unfreeze", bg="white").pack(pady=2)
+        tk.Label(self.keybindings_frame, text="[S]: Save data to file", bg="white").pack(pady=2)
 
         # Matplotlib Plot Area (Embedded)
         self.fig, self.ax = plt.subplots()
         self.ax.set_title("Real-time ADC Data")
         self.ax.set_xlabel("Samples")
         self.ax.set_ylabel("ADC Output")
-        # self.ax.legend()
-        self.lines: list[Line2D] | None = None
+        self.lines: list[Line2D]  = []
 
         self.canvas = FigureCanvasTkAgg(self.fig, self)
         self.canvas.get_tk_widget().pack(
-            pady=10,
+            pady=0,
             fill="both",
             expand=True,
         )
 
     def display_data(self, data: pd.DataFrame):
         """Update the graph with new data."""
-        named_colors = [
-            "blue",
-            "green",
-            "red",
-            "cyan",
-            "magenta",
-            "yellow",
-            "black",
-            "white",
-            "gray",
-            "lightblue",
-            "orange",
-            "purple",
-            "brown",
-        ]
 
-        if self.lines is None:
+        if len(self.lines) != len(data.columns):
+            for line in self.lines:
+                line.remove()
+            self.lines.clear()
             # Initiate lines in figure
-            self.lines = []
             for idx, name in enumerate(data.columns):
                 line = Line2D(
-                    data.index,
-                    data[name],
+                    xdata=data.index,
+                    ydata=data[name],
                     label=name,
-                    color=named_colors[idx % len(named_colors)],
+                    color=COLORS[idx % len(COLORS)],
                 )
                 self.lines.append(line)
                 self.ax.add_line(line)
-            self.ax.legend()
+            self.ax.legend(loc="upper left")
         else:
             # Update the plot
             for idx, name in enumerate(data.columns):
@@ -130,26 +136,30 @@ class View(tk.Frame):
 
         self.ax.relim()  # Recalculate limits
         self.ax.autoscale_view()
+        self.ax.grid(True)
         self.canvas.draw()  # Redraw the canvas
 
     def display_error(self, message: str):
         """Display error messages."""
-        tk.messagebox.showerror("Error", message)
+        messagebox.showerror("Error", message)
 
+    def display_success(self, message: str):
+        """Display error messages."""
+        messagebox.showinfo("Error", message)
+        
     def on_connect(self):
         """Connect to the selected COM port and baudrate."""
         try:
             port: str = self.port.get()
             baudrate = int(self.baudrate.get())
-            samples_per_channel = int(self.samples_per_channel.get())
+            samples_per_channel = self.samples_per_channel.get()
             if not port:
                 raise ValueError("Please select a COM port.")
             if baudrate <= 0:
                 raise ValueError("Please select a valid baudrate.")
 
-            self.controller.open_connection(
-                port=port, baudrate=baudrate, samples_per_channel=samples_per_channel
-            )
+            self.controller.open_connection(port=port, baudrate=baudrate, samples_per_channel=samples_per_channel)
+            self.keybindings_frame.grid()  # Show key bindings after connecting
 
         except ValueError as e:
             logger.error(str(e))
@@ -173,7 +183,7 @@ class View(tk.Frame):
             self.port.set("")  # Clear if no ports available
 
     def update_ui_elements(self):
-        """disable buttons and dropdows,"""
+        """disable buttons and dropdows, and activate keybindings"""
         # activate keybindings
         self.master.bind("<KeyPress>", self.on_key_press)
 
@@ -181,4 +191,4 @@ class View(tk.Frame):
         self.port.config(state="disabled")
         self.baudrate.config(state="disabled")
         self.connect_button.config(state="disabled")
-        self.samples_per_channel.config(state="disabled")
+        self.samples_per_channel_spin.config(state="disabled")
