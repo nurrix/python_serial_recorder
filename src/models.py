@@ -1,3 +1,4 @@
+from asyncio import Queue
 import serial
 import serial.tools.list_ports as list_ports
 import threading
@@ -41,6 +42,7 @@ class Model:
         self.SAMPLES_PER_CHANNEL: int | None = None
         self.__buffer = pd.DataFrame()
         self.__df_update_lock = threading.Lock()
+        self.q = Queue()
 
     def open_connection(
         self,
@@ -78,11 +80,19 @@ class Model:
             except Exception:
                 available_bytes = 0
 
-            if available_bytes == 0:
+            if available_bytes < 100:
                 time.sleep(updaterate_sec)
                 continue
+            
             # read n available bytes from serial connection (bytes)
-            ascii_data: str = rest + self.serial_connection.read(available_bytes).decode()
+            bytes: bytearray = self.serial_connection.read(available_bytes)
+            try:
+                ascii_data: str = rest + bytes.decode()
+            except UnicodeDecodeError as _:
+                # if error
+                rest = ""
+                continue
+            
             # Seperate each row of data
             row_asci_data: list[str] = ascii_data.split("\r\n")
             rest: str = row_asci_data[-1]

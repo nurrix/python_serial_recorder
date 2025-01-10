@@ -1,3 +1,5 @@
+import threading
+import time
 from tkinter import filedialog
 from pandas import DataFrame
 import serial
@@ -16,19 +18,15 @@ if TYPE_CHECKING:
 
 class Controller:
     def __init__(self, model: "Model", view: "View", update_rate_ms: int = 100) -> None:
-        """Initialize controller with model and view
-
-        Args:
-            model (Model)
-            view (View)
-        """
+        """Initialize controller with model and view"""
         self.model: Model = model
         self.view: View = view
         self.is_frozen: bool = False
         self.waiting_for_port_selection(dt_ms=update_rate_ms)
-        self.update_lines(dt_ms=update_rate_ms)
+        self.update_graph(dt_ms=update_rate_ms)
 
     def waiting_for_port_selection(self, dt_ms=100) -> None:
+        """update available ports efter ~10ms until connection is made."""
         if self.model.is_connected:
             # if COM-port is selected, exit this function
             return
@@ -41,7 +39,9 @@ class Controller:
         available_ports = self.model.get_available_ports()
         self.view.after(0, self.view.update_ports(available_ports))
 
-    def open_connection(self, port: str, baudrate: int, samples_per_channel: int) -> None:
+    def open_connection(
+        self, port: str, baudrate: int, samples_per_channel: int
+    ) -> None:
         """Open a serial connection."""
 
         try:
@@ -55,12 +55,21 @@ class Controller:
             logger.error(msg)
             self.view.display_error(msg)
 
-    def update_lines(self, dt_ms=100) -> None:
-        df: DataFrame = self.model.get_snapshot(is_frozen=self.is_frozen)
+    def update_graph(self, dt_ms=100) -> None:
+        """Create a thread to periodically update data if new data is available."""
 
-        if df is not None and not df.empty:
-            self.view.after(0, lambda: self.view.display_data(data=df))
-        self.view.after(dt_ms, lambda: self.update_lines(dt_ms=dt_ms))
+        def thr():
+            # wait for model to connect
+            while not self.model.is_connected:
+                time.sleep(dt_ms / 1000.0)
+
+            while self.model.is_connected:
+                df: DataFrame = self.model.get_snapshot(is_frozen=self.is_frozen)
+                if df is not None and not df.empty:
+                    self.view.after(0, lambda: self.view.display_data(data=df))
+                time.sleep(dt_ms / 1000.0)
+
+        threading.Thread(target=thr, name="update_graph", daemon=True).start()
 
     def snapshot_show(self):
         """either freeze or resume visualization"""
@@ -84,7 +93,9 @@ class Controller:
             # If dataframe is empty, restart recording, and cancel save
             logger.info("Nothing to save, unfreezing.")
             self.snapshot_show()
-            self.view.after(0, lambda: self.view.display_error("Nothing to save, unfreezing."))
+            self.view.after(
+                0, lambda: self.view.display_error("Nothing to save, unfreezing.")
+            )
             return
 
         # Open file dialog to prompt user for a location and file name

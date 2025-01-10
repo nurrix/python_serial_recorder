@@ -2,8 +2,8 @@
 hw_timer_t* timer = NULL;
 
 //#define number_of_channels 2
-#define BAUDRATE 115200
-uint8_t channels[] = { 2, 15 };
+#define BAUDRATE 921600
+uint8_t channels[] = { 2, 15, 13, 12 };
 int number_of_channels = sizeof(channels);
 
 
@@ -13,8 +13,6 @@ int* sensorValue = (int*)malloc(number_of_channels * sizeof(int));
 short new_sample;
 
 void IRAM_ATTR onTimer() {
-  //serialEvent();
-
     for (int i = 0; i < number_of_channels; i++) {
       sensorValue[i] = analogRead(channels[i]);
     }
@@ -39,20 +37,3 @@ void setup() {
 void loop() {
   delay(10);  // just to make sure that loop does something
 }
-/*
-void serialEvent() {
-  while (Serial.available()) {
-    int inChar = Serial.read();  // get the new byte
-    switch (inChar) {
-      case 's':
-        SendData = true;
-        break;
-      case 'e':
-        SendData = false;
-        break;
-      default:
-        break;
-    }
-  }
-}
-*/

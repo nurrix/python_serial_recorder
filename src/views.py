@@ -10,28 +10,18 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-logging.getLogger("PIL").setLevel(logging.WARNING)  # Suppress debug/info messages from Pillow
-logging.getLogger("matplotlib").setLevel(logging.WARNING)  # Suppress debug/info messages from matplotlib
+logging.getLogger("PIL").setLevel(
+    logging.WARNING
+)  # Suppress debug/info messages from Pillow
+logging.getLogger("matplotlib").setLevel(
+    logging.WARNING
+)  # Suppress debug/info messages from matplotlib
 
 
 if TYPE_CHECKING:
     from controller import Controller  # Only imported for type hinting
 
-COLORS = [
-    "blue",
-    "green",
-    "red",
-    "cyan",
-    "magenta",
-    "yellow",
-    "black",
-    "white",
-    "gray",
-    "lightblue",
-    "orange",
-    "purple",
-    "brown",
-]
+COLORS = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
 
 class View(tk.Frame):
@@ -66,24 +56,42 @@ class View(tk.Frame):
         selection_frame.grid(row=0, column=0, rowspan=4, padx=5, pady=5, sticky="n")
 
         # COM Port Dropdown
-        tk.Label(selection_frame, text="Select COM Port:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        tk.Label(selection_frame, text="Select COM Port:").grid(
+            row=0, column=0, padx=5, pady=5, sticky="w"
+        )
         self.port = ttk.Combobox(selection_frame, state="readonly", width=20)
         self.port.grid(row=0, column=1, padx=5, pady=5)
 
         # Baudrate Dropdown
-        tk.Label(selection_frame, text="Select Baudrate:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
-        self.baudrate = ttk.Combobox(selection_frame, values=[9600, 115200, 921600], state="readonly", width=20)
-        self.baudrate.set(115200)
+        tk.Label(selection_frame, text="Select Baudrate:").grid(
+            row=1, column=0, padx=5, pady=5, sticky="w"
+        )
+        self.baudrate = ttk.Combobox(
+            selection_frame, values=[9600, 115200, 921600], state="readonly", width=20
+        )
+        self.baudrate.set(921600)
         self.baudrate.grid(row=1, column=1, padx=5, pady=5)
 
         # Number of Samples Dropdown
-        tk.Label(selection_frame, text="Select Number of samples (per channel):").grid(row=2, column=0, padx=5, pady=5, sticky="w")
-        self.samples_per_channel = tk.IntVar(self,value= 1000)  # Set default value to 1000
-        self.samples_per_channel_spin = tk.Spinbox(selection_frame, from_=10, to=100_000, increment=100, textvariable=self.samples_per_channel)
+        tk.Label(selection_frame, text="Select Number of samples (per channel):").grid(
+            row=2, column=0, padx=5, pady=5, sticky="w"
+        )
+        self.samples_per_channel = tk.IntVar(
+            self, value=1000
+        )  # Set default value to 1000
+        self.samples_per_channel_spin = tk.Spinbox(
+            selection_frame,
+            from_=10,
+            to=100_000,
+            increment=100,
+            textvariable=self.samples_per_channel,
+        )
         self.samples_per_channel_spin.grid(row=2, column=1, padx=5, pady=5)
 
         # Connect Button
-        self.connect_button = tk.Button(selection_frame, text="Connect", command=self.on_connect, width=20)
+        self.connect_button = tk.Button(
+            selection_frame, text="Connect", command=self.on_connect, width=20
+        )
         self.connect_button.grid(row=3, column=0, columnspan=2, pady=10)
 
         # Create a frame for the key bindings
@@ -93,15 +101,20 @@ class View(tk.Frame):
 
         # Key Bindings Explanation
         tk.Label(self.keybindings_frame, text="Key Bindings:", bg="white").pack(pady=5)
-        tk.Label(self.keybindings_frame, text="[Space]: Freeze / Unfreeze", bg="white").pack(pady=2)
-        tk.Label(self.keybindings_frame, text="[S]: Save data to file", bg="white").pack(pady=2)
+        tk.Label(
+            self.keybindings_frame, text="[Space]: Freeze / Unfreeze", bg="white"
+        ).pack(pady=2)
+        tk.Label(
+            self.keybindings_frame, text="[S]: Save data to file", bg="white"
+        ).pack(pady=2)
 
         # Matplotlib Plot Area (Embedded)
         self.fig, self.ax = plt.subplots()
         self.ax.set_title("Real-time ADC Data")
         self.ax.set_xlabel("Samples")
         self.ax.set_ylabel("ADC Output")
-        self.lines: list[Line2D]  = []
+        self.ax.grid(True)
+        self.lines: list[Line2D] = []
 
         self.canvas = FigureCanvasTkAgg(self.fig, self)
         self.canvas.get_tk_widget().pack(
@@ -123,20 +136,18 @@ class View(tk.Frame):
                     xdata=data.index,
                     ydata=data[name],
                     label=name,
-                    color=COLORS[idx % len(COLORS)],
+                    #color=COLORS[idx % len(COLORS)],
                 )
                 self.lines.append(line)
                 self.ax.add_line(line)
             self.ax.legend(loc="upper left")
         else:
             # Update the plot
-            for idx, name in enumerate(data.columns):
-                self.lines[idx].set_xdata(data.index.to_list())
-                self.lines[idx].set_ydata(data[name])
+            for name, line in zip(data.columns, self.lines):
+                line.set_data(data.index.to_list(), data[name])
 
         self.ax.relim()  # Recalculate limits
         self.ax.autoscale_view()
-        self.ax.grid(True)
         self.canvas.draw()  # Redraw the canvas
 
     def display_error(self, message: str):
@@ -146,7 +157,7 @@ class View(tk.Frame):
     def display_success(self, message: str):
         """Display error messages."""
         messagebox.showinfo("Error", message)
-        
+
     def on_connect(self):
         """Connect to the selected COM port and baudrate."""
         try:
@@ -158,7 +169,9 @@ class View(tk.Frame):
             if baudrate <= 0:
                 raise ValueError("Please select a valid baudrate.")
 
-            self.controller.open_connection(port=port, baudrate=baudrate, samples_per_channel=samples_per_channel)
+            self.controller.open_connection(
+                port=port, baudrate=baudrate, samples_per_channel=samples_per_channel
+            )
             self.keybindings_frame.grid()  # Show key bindings after connecting
 
         except ValueError as e:
