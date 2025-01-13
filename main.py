@@ -379,7 +379,6 @@ def on_close(model: Model, view: View, root: tk.Toplevel) -> None:
     root.quit()
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levellevel)s - %(message)s")
     logger.info("Starting Serial Recorder...")
     main()
     logger.info("Exiting...")
