@@ -25,11 +25,18 @@ from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 import serial.tools.list_ports as list_ports
 
+# Configure logging
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levellevel)s - %(message)s", filename="log.log", filemode="w")
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+logging.getLogger().addHandler(console_handler)
 logging.getLogger("PIL").setLevel(logging.WARNING)
 logging.getLogger("matplotlib").setLevel(logging.WARNING)
 
 def main() -> None:
+    """Main function to set up the GUI and start the application."""
     name = "Serial Data Viewer"
     root = tk.Tk(screenName=name, baseName=name, className=name)
     root.geometry(f"{int(root.winfo_screenwidth() // 2)}x{int(root.winfo_screenheight() // (3/2))}")
@@ -40,43 +47,61 @@ def main() -> None:
     root.mainloop()
 
 class Controller:
+    """Controller class to manage interactions between the Model and View."""
     def __init__(self, model: "Model", view: "View", update_rate_ms: int = 100) -> None:
         self.model, self.view, self.is_frozen = model, view, False
         self.waiting_for_port_selection(dt_ms=update_rate_ms)
         self.update_graph(dt_ms=update_rate_ms)
 
     def waiting_for_port_selection(self, dt_ms=100) -> None:
+        """Update available ports until a connection is made."""
         if self.model.is_connected: return
         self.update_available_ports()
         self.view.after(dt_ms, self.waiting_for_port_selection)
 
     def update_available_ports(self) -> list[str]:
+        """Get the list of available COM ports and update the view."""
         available_ports = self.model.get_available_ports()
         self.view.after(0, self.view.update_ports(available_ports))
 
     def open_connection(self, port: str, baudrate: int, samples_per_channel: int) -> None:
+        """Open a serial connection and update the UI elements."""
         try:
             self.model.open_connection(port, baudrate, samples_per_channel)
             self.SAMPLES_PER_CHANNEL = samples_per_channel
             self.view.update_ui_elements()
+            logger.info(f"Opened connection on port {port} with baudrate {baudrate} and {samples_per_channel} samples per channel.")
         except serial.SerialException as e:
             self.view.display_error(str(e))
+            logger.error(f"Failed to open connection on port {port}: {str(e)}")
 
     def update_graph(self, dt_ms=100) -> None:
+        """Create a thread to periodically update data if new data is available."""
         def graph_updating_thread():
-            while not self.model.is_connected: time.sleep(dt_ms / 1000.0)
+            # Wait until the model is connected
+            while not self.model.is_connected:
+                time.sleep(dt_ms / 1000.0)
+            
+            # Continuously update the graph with new data
             while self.model.is_connected:
+                t1 = time.time()
                 df = self.model.get_snapshot(is_frozen=self.is_frozen)
                 if df is not None and not df.empty:
                     self.view.after(0, lambda: self.view.display_data(data=df))
-                time.sleep(dt_ms / 1000.0)
+                time.sleep(max(dt_ms / 1000.0-(time.time()-t1),0.00001))
         threading.Thread(target=graph_updating_thread, name="update_graph", daemon=True).start()
 
     def snapshot_show(self):
+        """Toggle freezing and unfreezing of the data display."""
         self.is_frozen = not self.is_frozen
-        if self.is_frozen: self.model.update_snapshot()
+        if self.is_frozen:
+            self.model.update_snapshot()
+            logger.info("Data display frozen.")
+        else:
+            logger.info("Data display unfrozen.")
 
     def save_snapshot(self):
+        """Save the current snapshot to a file."""
         if self.is_running:
             self.snapshot_show()
             self.view.after(0, self.save_snapshot)
@@ -85,6 +110,7 @@ class Controller:
         if df.empty:
             self.snapshot_show()
             self.view.after(0, lambda: self.view.display_error("Nothing to save, unfreezing."))
+            logger.warning("Attempted to save an empty snapshot.")
             return
         file_path = filedialog.asksaveasfilename(
             defaultextension=".xlsx",
@@ -103,14 +129,18 @@ class Controller:
         else:
             msg = "Invalid file format. Please save as CSV, Excel, or JSON."
             self.view.after(0, lambda: self.view.display_error(msg))
+            logger.error(msg)
             return
         self.view.after(0, lambda: self.view.display_success(msg))
+        logger.info(msg)
 
     @property
     def is_running(self):
+        """Check if the data display is running."""
         return not self.is_frozen
 
 class View(tk.Frame):
+    """View class to manage the graphical user interface."""
     def __init__(self, master: tk.Toplevel) -> None:
         super().__init__(master)
         self.master = master
@@ -118,17 +148,22 @@ class View(tk.Frame):
         self.pack(fill="both", expand=True)
 
     def on_key_press(self, event: tk.Event):
+        """Handle key press events."""
         match event.keysym:
             case "space":
                 self.controller.snapshot_show()
+                logger.info("Space key pressed: toggled freeze/unfreeze.")
             case "s" | "S":
                 self.controller.snapshot_show()
                 self.after(0, self.controller.save_snapshot)
+                logger.info("S key pressed: saved snapshot.")
 
     def set_controller(self, controller: "Controller"):
+        """Set the controller for the view."""
         self.controller = controller
 
     def setup_ui(self):
+        """Set up the UI elements."""
         control_frame = tk.Frame(self)
         control_frame.pack(pady=10)
         selection_frame = tk.Frame(control_frame)
@@ -157,11 +192,14 @@ class View(tk.Frame):
         self.ax.set_xlabel("Samples")
         self.ax.set_ylabel("ADC Output")
         self.ax.grid(True)
-        self.lines = []
+        self.lines: list[Line2D] = []
         self.canvas = FigureCanvasTkAgg(self.fig, self)
         self.canvas.get_tk_widget().pack(pady=0, fill="both", expand=True)
 
     def display_data(self, data: pd.DataFrame):
+        """Update the graph with new data."""
+        if not self.winfo_ismapped():
+            return
         COLORS = plt.rcParams["axes.prop_cycle"].by_key()["color"]
         if len(self.lines) != len(data.columns):
             for line in self.lines:
@@ -180,22 +218,30 @@ class View(tk.Frame):
         self.canvas.draw()
 
     def display_error(self, message: str):
+        """Display error messages."""
         messagebox.showerror("Error", message)
+        logger.error(message)
 
     def display_success(self, message: str):
+        """Display success messages."""
         messagebox.showinfo("Success", message)
+        logger.info(message)
 
     def on_connect(self):
+        """Connect to the selected COM port and baudrate."""
         try:
             port, baudrate, samples_per_channel = self.port.get(), int(self.baudrate.get()), self.samples_per_channel.get()
             if not port: raise ValueError("Please select a COM port.")
             if baudrate <= 0: raise ValueError("Please select a valid baudrate.")
             self.controller.open_connection(port=port, baudrate=baudrate, samples_per_channel=samples_per_channel)
             self.keybindings_frame.grid()
+            logger.info(f"Connected to port {port} with baudrate {baudrate} and {samples_per_channel} samples per channel.")
         except Exception as e:
             self.display_error(f"Error: {str(e)}")
+            logger.error(f"Failed to connect: {str(e)}")
 
     def update_ports(self, available_ports):
+        """Update the available ports dropdown."""
         if set(available_ports) == set(self.port["values"]): return
         selected_port = self.port.get()
         self.port["values"] = available_ports
@@ -205,73 +251,106 @@ class View(tk.Frame):
             self.port.set(available_ports[-1])
         else:
             self.port.set("")
+        logger.info(f"Updated available ports: {available_ports}")
 
     def update_ui_elements(self):
+        """Disable buttons and dropdowns, and activate keybindings."""
         self.master.bind("<KeyPress>", self.on_key_press)
         self.port.config(state="disabled")
         self.baudrate.config(state="disabled")
         self.connect_button.config(state="disabled")
         self.samples_per_channel_spin.config(state="disabled")
+        logger.info("UI elements updated: buttons and dropdowns disabled, keybindings activated.")
 
 class Model:
+    """Model class to handle data and serial communication."""
     def __init__(self):
-        self.serial_connection, self.read_thread, self.is_reading, self.SAMPLES_PER_CHANNEL = None, None, False, None
+        self.serial_connection, self.read_thread, self.SAMPLES_PER_CHANNEL = None, None, None
         self.__buffer, self.__df_update_lock = pd.DataFrame(), threading.Lock()
 
     def open_connection(self, port: str, baudrate: int, samples_per_channel: int) -> tuple[bool, Optional[str]]:
+        """Open a serial connection and start reading in a separate thread."""
         if self.is_connected: raise serial.SerialException("Already connected to a serial port.")
         try:
             self.serial_connection = serial.Serial(port, baudrate)
             self.SAMPLES_PER_CHANNEL = samples_per_channel
             self.read_thread = threading.Thread(target=self.start_continuous_read_from_serial, name="SerialReader", daemon=True)
             self.read_thread.start()
+            logger.info(f"Opened serial connection on port {port} with baudrate {baudrate}.")
         except serial.SerialException as e:
             raise serial.SerialException(f"Error opening serial port: {str(e)}")
 
     def start_continuous_read_from_serial(self, updaterate_sec: float = 1 / 50):
-        def str_to_intarray(data: str):
-            return list(map(int, data.split(" ")))
-
-        def calculate_2D_matrix(data) -> tuple[int, int]:
-            num_rows = len(data)
-            num_cols = len(data[0]) if num_rows else 0
-            return num_rows, num_cols
-
-        def str_contains_only_numbers(row: str):
-            return row and all(c.isdigit() or c == " " for c in row)
-
-        self.read(flag=True)
+        """Continuously read data from the serial port in a background thread."""
         rest, counter = "", 0
         while self.is_connected:
-            try:
-                available_bytes = self.serial_connection.in_waiting
-            except Exception:
-                available_bytes = 0
-            if available_bytes < 100:
-                time.sleep(updaterate_sec)
-                continue
-            bytes = self.serial_connection.read(available_bytes)
-            try:
-                ascii_data = rest + bytes.decode()
-            except UnicodeDecodeError:
-                logger.warning("read unknown non-character bytes.")
-                rest = ""
-                continue
-            row_asci_data = ascii_data.split("\r\n")
-            rest = row_asci_data[-1]
-            if len(row_asci_data) < 2: continue
-            data = row_asci_data[:-2]
-            data_filtered = filter(str_contains_only_numbers, data)
-            data_integers = list(map(str_to_intarray, data_filtered))
-            num_rows, num_channels = calculate_2D_matrix(data_integers)
-            if num_rows == 0 or num_channels == 0: continue
-            column_names = [f"Ch{i}" for i in range(num_channels)]
-            dfnew = pd.DataFrame(data_integers, index=range(counter, counter + num_rows), columns=column_names)
-            self.update_df(data=dfnew)
-            counter += num_rows
+            # Check for available bytes in the serial connection
+            available_bytes = self.get_available_bytes()
+            if available_bytes:
+                # Read and process the serial data
+                ascii_data = self.read_serial_data(available_bytes, rest)
+                if ascii_data is None:
+                    rest = ""
+                else:
+                    rest, data_integers = self.process_serial_data(ascii_data)
+                    if data_integers:
+                        # Update the DataFrame with new data
+                        self.update_dataframe(data_integers, counter)
+                        counter += len(data_integers)
             time.sleep(updaterate_sec)
 
+    def get_available_bytes(self) -> int:
+        """Get the number of available bytes in the serial connection."""
+        try:
+            return max(self.serial_connection.in_waiting,0)
+        except Exception:
+            return 0
+
+    def read_serial_data(self, available_bytes: int, rest: str) -> Optional[str]:
+        """Read data from the serial connection and decode it."""
+        try:
+            bytes = self.serial_connection.read(available_bytes)
+            return rest + bytes.decode()
+        except UnicodeDecodeError:
+            logger.warning("Read unknown non-character bytes.")
+            return None
+
+    def process_serial_data(self, ascii_data: str) -> tuple[str, list[list[int]]]:
+        """Process the ASCII data read from the serial connection."""
+        row_asci_data = ascii_data.split("\r\n")
+        rest = row_asci_data[-1]
+        if len(row_asci_data) < 2:
+            return rest, []
+        data = row_asci_data[:-2]
+        data_filtered = filter(self.str_contains_only_numbers, data)
+        data_integers = list(map(self.str_to_intarray, data_filtered))
+        return rest, data_integers
+
+    def update_dataframe(self, data_integers: list[list[int]], counter: int) -> None:
+        """Update the DataFrame with new data."""
+        num_rows, num_channels = self.calculate_2D_matrix(data_integers)
+        if num_rows == 0 or num_channels == 0:
+            return
+        column_names = [f"Ch{i}" for i in range(num_channels)]
+        dfnew = pd.DataFrame(data_integers, index=range(counter, counter + num_rows), columns=column_names)
+        self.update_df(data=dfnew)
+
+    def str_to_intarray(self, data: str) -> list[int]:
+        """Convert a string of numbers separated by spaces to a list of integers."""
+        return list(map(int, data.split(" ")))
+
+    def calculate_2D_matrix(self, data: list[list[int]]) -> tuple[int, int]:
+        """Calculate the number of rows and columns in a 2D matrix."""
+        num_rows = len(data)
+        num_cols = len(data[0]) if num_rows else 0
+        return num_rows, num_cols
+
+    def str_contains_only_numbers(self, row: str) -> bool:
+        """Check if a string contains only numbers and spaces."""
+        return row and all(c.isdigit() or c == " " for c in row)
+
     def update_df(self, data: pd.DataFrame) -> None:
+        """Update the buffer with new data."""
         with self.__df_update_lock:
             if self.__buffer.shape[1] != data.shape[1]:
                 sz = (self.SAMPLES_PER_CHANNEL, data.shape[1])
@@ -281,50 +360,48 @@ class Model:
                 self.__buffer = self.__buffer.iloc[-self.SAMPLES_PER_CHANNEL:]
 
     def close_connection(self) -> None:
+        """Close the serial connection."""
         if self.is_connected:
-            self.read(False)
             self.serial_connection.close()
 
     def get_available_ports(self) -> list[str]:
+        """Get the list of available COM ports."""
         ports = [port.device for port in list_ports.comports()]
         return sorted(list(set(ports))) if ports else []
 
-    def read(self, flag: bool) -> None:
-        self.is_reading = flag and self.is_connected
-        if self.is_disconnected: return
-        msg = b"s" if flag else b"e"
-        try:
-            self.serial_connection.write(msg)
-        except serial.SerialException as e:
-            logger.error(str(e))
-
     def update_snapshot(self) -> None:
+        """Copy the current buffer into a snapshot."""
         with self.__df_update_lock:
             self.__snapshot = self.__buffer.copy()
 
     def get_snapshot(self, is_frozen: bool) -> pd.DataFrame | None:
-        if not self.is_reading: return None
+        """Return a snapshot of the data or the buffer."""
+        if not self.is_connected: return None
         with self.__df_update_lock:
             return self.__snapshot.copy() if is_frozen else self.__buffer.copy()
 
     @property
     def is_connected(self) -> bool:
+        """Check if the serial connection is established."""
         return self.serial_connection and self.serial_connection.is_open and self.read_thread.is_alive
 
     @property
     def is_disconnected(self) -> bool:
+        """Check if the serial connection is not established."""
         return not self.is_connected
 
     def __del__(self) -> None:
+        """Destructor to close the serial connection."""
         self.close_connection()
 
 def on_close(model: Model, view: View, root: tk.Toplevel) -> None:
+    """Close the application and clean up resources."""
     model.close_connection()
     view.destroy()
     root.quit()
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levellevel)s - %(message)s")
     logger.info("Starting Serial Recorder...")
     main()
     logger.info("Exiting...")

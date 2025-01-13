@@ -35,5 +35,5 @@ void setup() {
 }
 
 void loop() {
-  delay(10);  // just to make sure that loop does something
+  delay(1);  // just to make sure that loop does something
 }
