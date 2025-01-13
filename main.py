@@ -76,10 +76,14 @@ class Controller:
             
             while self.model.is_connected:
                 t1 = time.time()
-                if self.view.winfo_ismapped(): 
-                    df = self.model.get_snapshot(is_frozen=self.is_frozen)
-                    if df is not None and not df.empty:
-                        self.view.after(0, lambda: self.view.display_data(data=df))
+                try:
+                    if self.view.winfo_ismapped(): 
+                        df = self.model.get_snapshot(is_frozen=self.is_frozen)
+                        if df is not None and not df.empty:
+                            self.view.after(0, lambda: self.view.display_data(data=df))
+                except:
+                    logger.error("Stopped graph updater due to error.")
+                    return
                 dt = time.time()-t1
                 time.sleep(max(dt_ms / 1000.0 - dt,0))
         threading.Thread(target=graph_updating_thread, name="update_graph", daemon=True).start()
