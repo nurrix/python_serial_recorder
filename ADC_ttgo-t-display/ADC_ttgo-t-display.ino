@@ -3,7 +3,7 @@ hw_timer_t* timer = NULL;
 
 //#define number_of_channels 2
 #define BAUDRATE 921600
-uint8_t channels[] = { 2, 15, 13, 12 };
+uint8_t channels[] = { 2 };
 int number_of_channels = sizeof(channels);
 
 

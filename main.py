@@ -268,6 +268,10 @@ class Model:
     def start_continuous_read_from_serial(self, updaterate_sec: float = 1 / 50):
         """Continuously read data from the serial port in a background thread."""
         rest, counter = "", 0
+        if self.is_connected:
+            self.serial_connection.flush()
+            self.serial_connection.read()
+
         while self.is_connected:
             available_bytes = self.get_available_bytes()
             if available_bytes:

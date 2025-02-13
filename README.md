@@ -10,8 +10,8 @@ Use the following guides to install a package manager if you do not already have
 - https://chocolatey.org/install
 - https://brew.sh/
 
-## git (optional, and you only need one of them)
-- just git
+## git
+- Install Git on your system. This is a way to download other peoples projects.
 
    ```bash
       brew install git
@@ -22,12 +22,20 @@ Use the following guides to install a package manager if you do not already have
 
 
 ## Python 
+
+This program works with Python 3.13.2. However, it is very possible that it will also work with newer or older versions. I cannot garantee it however.
+
 1. Option 1: download and use the installer from www.python.org
 2. Option 2: Use package manager. Pick the package manager you have installed on your system. If you dont have it, you can install one from their respective websites.  
-   
+   - MacOS
    ```bash
       brew install python
+      brew install python-tk
+   ```
+   - Windows
+   ```bash 
       choco install python
+      
    ```
 
 ## how to install python packages via pip
@@ -51,16 +59,17 @@ For MacOS and Windows.
     python -m venv .venv
     ```
 3. activate python environment
-   - MacOS
+   - Depending on if it is not already activated when you open a terminal in VS Code, you can do the following.
+     - MacOS
 
-   ```bash
-      source .venv/bin/activate  
-   ```
-   - Windows
+     ```bash
+        source .venv/bin/activate  
+     ```
+     - Windows
 
-   ```bash
-      source .venv/Scripts/activate  
-   ```
+     ```bash
+        source .venv/Scripts/activate  
+     ```
 
 4. install program requirements via reqirements.txt
     ```bash
