@@ -26,7 +26,9 @@ import matplotlib.pyplot as plt
 import serial.tools.list_ports as list_ports
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", filename="log.log", filemode="w")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", filename="log.log", filemode="w"
+)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.INFO)
 console_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
@@ -34,19 +36,22 @@ logging.getLogger().addHandler(console_handler)
 logging.getLogger("PIL").setLevel(logging.WARNING)
 logging.getLogger("matplotlib").setLevel(logging.WARNING)
 
+
 def main() -> None:
     """Main function to set up the GUI and start the application."""
     name = "Serial Data Viewer"
     root = tk.Tk(screenName=name, baseName=name, className=name)
-    root.geometry(f"{int(root.winfo_screenwidth() // 2)}x{int(root.winfo_screenheight() // (3/2))}")
+    root.geometry(f"{int(root.winfo_screenwidth() // 2)}x{int(root.winfo_screenheight() // (3 / 2))}")
     model, view = Model(), View(master=root)
     controller = Controller(model, view, update_rate_ms=100)
     view.set_controller(controller=controller)
     root.protocol("WM_DELETE_WINDOW", lambda: on_close(model=model, view=view, root=root))
     root.mainloop()
 
+
 class Controller:
     """Controller class to manage interactions between the Model and View."""
+
     def __init__(self, model: "Model", view: "View", update_rate_ms: int = 100) -> None:
         self.model, self.view, self.is_frozen = model, view, False
         self.waiting_for_port_selection(dt_ms=update_rate_ms)
@@ -54,14 +59,16 @@ class Controller:
 
     def waiting_for_port_selection(self, dt_ms=100) -> None:
         """Update available ports until a connection is made."""
-        if self.model.is_connected: return
+        if self.model.is_connected:
+            return
         self.update_available_ports()
         self.view.after(dt_ms, self.waiting_for_port_selection)
 
     def update_available_ports(self) -> list[str]:
         """Get the list of available COM ports and update the view."""
         available_ports = self.model.get_available_ports()
-        self.view.after(0, self.view.update_ports(available_ports))
+        logger.info(available_ports)
+        self.view.after(0, lambda available_ports=available_ports: self.view.update_ports(available_ports))
 
     def open_connection(self, port: str, baudrate: int, samples_per_channel: int) -> None:
         """Open a serial connection and update the UI elements."""
@@ -71,21 +78,24 @@ class Controller:
 
     def update_graph(self, dt_ms=100) -> None:
         """Create a thread to periodically update data if new data is available."""
+
         def graph_updating_thread():
-            while not self.model.is_connected: time.sleep(dt_ms / 1000.0)
-            
+            while not self.model.is_connected:
+                time.sleep(dt_ms / 1000.0)
+
             while self.model.is_connected:
                 t1 = time.time()
                 try:
-                    if self.view.winfo_ismapped(): 
+                    if self.view.winfo_ismapped():
                         df = self.model.get_snapshot(is_frozen=self.is_frozen)
                         if df is not None and not df.empty:
                             self.view.after(0, lambda: self.view.display_data(data=df))
-                except:
-                    logger.error("Stopped graph updater due to error.")
+                except Exception as e:
+                    logger.error(f"Stopped graph updater due to error.\n{e}")
                     return
-                dt = time.time()-t1
-                time.sleep(max(dt_ms / 1000.0 - dt,0))
+                dt = time.time() - t1
+                time.sleep(max(dt_ms / 1000.0 - dt, 0))
+
         threading.Thread(target=graph_updating_thread, name="update_graph", daemon=True).start()
 
     def snapshot_show(self):
@@ -108,7 +118,12 @@ class Controller:
             return
         file_path = filedialog.asksaveasfilename(
             defaultextension=".xlsx",
-            filetypes=[("Excel files", "*.xlsx"), ("CSV files", "*.csv"), ("JSON files", "*.json"), ("All files", "*.*")],
+            filetypes=[
+                ("Excel files", "*.xlsx"),
+                ("CSV files", "*.csv"),
+                ("JSON files", "*.json"),
+                ("All files", "*.*"),
+            ],
             title="Save Timeseries",
         )
         if file_path.endswith(".csv"):
@@ -131,8 +146,10 @@ class Controller:
         """Check if the data display is running."""
         return not self.is_frozen
 
+
 class View(tk.Frame):
     """View class to manage the graphical user interface."""
+
     def __init__(self, master: tk.Toplevel) -> None:
         super().__init__(master)
         self.master = master
@@ -165,9 +182,13 @@ class View(tk.Frame):
         self.baudrate = ttk.Combobox(selection_frame, values=[9600, 115200, 921600], state="readonly", width=20)
         self.baudrate.set(921600)
         self.baudrate.grid(row=1, column=1, padx=5, pady=5)
-        tk.Label(selection_frame, text="Select Number of samples (per channel):").grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        tk.Label(selection_frame, text="Select Number of samples (per channel):").grid(
+            row=2, column=0, padx=5, pady=5, sticky="w"
+        )
         self.samples_per_channel = tk.IntVar(self, value=1000)
-        self.samples_per_channel_spin = tk.Spinbox(selection_frame, from_=10, to=100_000, increment=100, textvariable=self.samples_per_channel)
+        self.samples_per_channel_spin = tk.Spinbox(
+            selection_frame, from_=10, to=100_000, increment=100, textvariable=self.samples_per_channel
+        )
         self.samples_per_channel_spin.grid(row=2, column=1, padx=5, pady=5)
         self.connect_button = tk.Button(selection_frame, text="Connect", command=self.on_connect, width=20)
         self.connect_button.grid(row=3, column=0, columnspan=2, pady=10)
@@ -188,7 +209,7 @@ class View(tk.Frame):
 
     def display_data(self, data: pd.DataFrame):
         """Update the graph with new data."""
-        
+
         COLORS = plt.rcParams["axes.prop_cycle"].by_key()["color"]
         if len(self.lines) != len(data.columns):
             for line in self.lines:
@@ -219,18 +240,27 @@ class View(tk.Frame):
     def on_connect(self):
         """Connect to the selected COM port and baudrate."""
         try:
-            port, baudrate, samples_per_channel = self.port.get(), int(self.baudrate.get()), self.samples_per_channel.get()
-            if not port: raise ValueError("Please select a COM port.")
-            if baudrate <= 0: raise ValueError("Please select a valid baudrate.")
+            port, baudrate, samples_per_channel = (
+                self.port.get(),
+                int(self.baudrate.get()),
+                self.samples_per_channel.get(),
+            )
+            if not port:
+                raise ValueError("Please select a COM port.")
+            if baudrate <= 0:
+                raise ValueError("Please select a valid baudrate.")
             self.controller.open_connection(port=port, baudrate=baudrate, samples_per_channel=samples_per_channel)
             self.keybindings_frame.grid()
-            logger.info(f"Connected to port {port} with baudrate {baudrate} and {samples_per_channel} samples per channel.")
+            logger.info(
+                f"Connected to port {port} with baudrate {baudrate} and {samples_per_channel} samples per channel."
+            )
         except Exception as e:
             self.display_error(str(e))
 
     def update_ports(self, available_ports):
         """Update the available ports dropdown."""
-        if set(available_ports) == set(self.port["values"]): return
+        if set(available_ports) == set(self.port["values"]):
+            return
         selected_port = self.port.get()
         self.port["values"] = available_ports
         if selected_port in available_ports:
@@ -248,19 +278,24 @@ class View(tk.Frame):
         self.connect_button.config(state="disabled")
         self.samples_per_channel_spin.config(state="disabled")
 
+
 class Model:
     """Model class to handle data and serial communication."""
+
     def __init__(self):
         self.serial_connection, self.read_thread, self.SAMPLES_PER_CHANNEL = None, None, None
         self.__buffer, self.__df_update_lock = pd.DataFrame(), threading.Lock()
 
     def open_connection(self, port: str, baudrate: int, samples_per_channel: int) -> tuple[bool, Optional[str]]:
         """Open a serial connection and start reading in a separate thread."""
-        if self.is_connected: raise serial.SerialException("Already connected to a serial port.")
+        if self.is_connected:
+            raise serial.SerialException("Already connected to a serial port.")
         try:
             self.serial_connection = serial.Serial(port, baudrate)
             self.SAMPLES_PER_CHANNEL = samples_per_channel
-            self.read_thread = threading.Thread(target=self.start_continuous_read_from_serial, name="SerialReader", daemon=True)
+            self.read_thread = threading.Thread(
+                target=self.start_continuous_read_from_serial, name="SerialReader", daemon=True
+            )
             self.read_thread.start()
         except serial.SerialException as _:
             raise serial.SerialException(f"Could not open serial connection")
@@ -288,7 +323,7 @@ class Model:
     def get_available_bytes(self) -> int:
         """Get the number of available bytes in the serial connection."""
         try:
-            return max(self.serial_connection.in_waiting,0)
+            return max(self.serial_connection.in_waiting, 0)
         except Exception:
             return 0
 
@@ -340,10 +375,12 @@ class Model:
         with self.__df_update_lock:
             if self.__buffer.shape[1] != data.shape[1]:
                 sz = (self.SAMPLES_PER_CHANNEL, data.shape[1])
-                self.__buffer = pd.DataFrame(np.zeros(sz), columns=data.columns, index=range(-self.SAMPLES_PER_CHANNEL, 0), dtype=int)
+                self.__buffer = pd.DataFrame(
+                    np.zeros(sz), columns=data.columns, index=range(-self.SAMPLES_PER_CHANNEL, 0), dtype=int
+                )
             self.__buffer = pd.concat([self.__buffer, data], ignore_index=False)
             if len(self.__buffer) > self.SAMPLES_PER_CHANNEL:
-                self.__buffer = self.__buffer.iloc[-self.SAMPLES_PER_CHANNEL:]
+                self.__buffer = self.__buffer.iloc[-self.SAMPLES_PER_CHANNEL :]
 
     def close_connection(self) -> None:
         """Close the serial connection."""
@@ -362,7 +399,8 @@ class Model:
 
     def get_snapshot(self, is_frozen: bool) -> pd.DataFrame | None:
         """Return a snapshot of the data or the buffer."""
-        if not self.is_connected: return None
+        if not self.is_connected:
+            return None
         with self.__df_update_lock:
             return self.__snapshot.copy() if is_frozen else self.__buffer.copy()
 
@@ -380,11 +418,13 @@ class Model:
         """Destructor to close the serial connection."""
         self.close_connection()
 
+
 def on_close(model: Model, view: View, root: tk.Toplevel) -> None:
     """Close the application and clean up resources."""
     model.close_connection()
     view.destroy()
     root.quit()
+
 
 if __name__ == "__main__":
     logger.info("Starting Serial Recorder...")
