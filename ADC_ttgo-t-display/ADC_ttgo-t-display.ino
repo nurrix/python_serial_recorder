@@ -2,10 +2,12 @@
 hw_timer_t* timer = NULL;
 
 
-#define BAUDRATE 115200  // bits (not bytes) transfered per second.
 /** baudrate must be larger than 
-   BAUDRATE > MICROSECONDS_BETWEEN_SAMPLES * (number of channels) * 8 * 7 
- * i.e. if we are using 2 channels, at 1ms sampling rate, the minimum baudrate we can use is 115200 */
+  BAUDRATE > MICROSECONDS_BETWEEN_SAMPLES * (number of channels) * 8 * 7 
+  i.e. if we are using 2 channels, at 1ms sampling rate, the minimum baudrate we can use is 115200 
+  These are the standard value options: 9600, 115200, 256000, 512000, 921600
+ */
+#define BAUDRATE 115200  // bits (not bytes) transfered per second.
 
 #define MICROSECONDS_BETWEEN_SAMPLES 1000  // 1000 microseconds = 1 msec
 uint8_t channels[] = { 2 };                // specify the gpio# where there is adc functionality.
