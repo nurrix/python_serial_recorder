@@ -217,8 +217,6 @@ class View(tk.Frame):
         self.canvas.get_tk_widget().pack(pady=0, fill="both", expand=True)
 
         # logging area
-        self.log_area = ScrolledText(self, height=15, width=70, state="disabled")
-        self.log_area.pack(pady=10, fill=tk.BOTH)
         self.setup_logger()
 
     def display_data(self, data: pd.DataFrame):
@@ -284,11 +282,12 @@ class View(tk.Frame):
 
     def setup_logger(self):
         """Set up the logging system to write to the Tkinter Text widget."""
-        logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+        self.log_area = ScrolledText(self, height=15, width=70, state="disabled")
+        self.log_area.pack(pady=10, fill=tk.BOTH)
 
         # Create a custom logging handler
         class TextHandler(logging.Handler):
-            def __init__(self, widget: tk.Widget):
+            def __init__(self, widget: ScrolledText):
                 super().__init__()
                 self.widget = widget
 
