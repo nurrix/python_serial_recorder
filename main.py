@@ -26,23 +26,12 @@ import pandas as pd
 import numpy as np
 import tkinter as tk
 from typing import Optional
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, filedialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 import serial.tools.list_ports as list_ports
 from tkinter.scrolledtext import ScrolledText
-
-logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", filename="log.log", filemode="w"
-)
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-console_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-logging.getLogger().addHandler(console_handler)
-logging.getLogger("PIL").setLevel(logging.WARNING)
-logging.getLogger("matplotlib").setLevel(logging.WARNING)
 
 
 def main() -> None:
@@ -98,7 +87,7 @@ class Controller:
                         if df is not None and not df.empty:
                             self.view.after(0, lambda: self.view.display_data(data=df))
                 except Exception as e:
-                    logger.error(f"Stopped graph updater due to error.\n{e}")
+                    logging.error(f"Stopped graph updater due to error.\n{e}")
                     return
                 dt = time.time() - t1
                 time.sleep(max(dt_ms / 1000.0 - dt, 0))
@@ -122,8 +111,8 @@ class Controller:
         df = self.model.get_snapshot(is_frozen=self.is_frozen)
         if df.empty:
             self.snapshot_show()
-            logger.error("Nothing to save, unfreezing.")
-            logger.warning("Attempted to save an empty snapshot.")
+            logging.error("Nothing to save, unfreezing.")
+            logging.warning("Attempted to save an empty snapshot.")
             return
         file_path = filedialog.asksaveasfilename(
             defaultextension=".xlsx",
@@ -148,9 +137,9 @@ class Controller:
             msg = f"Data saved as JSON to {file_path}"
         else:
             msg = "Invalid file format. Please save as CSV, Excel, or JSON."
-            logger.error(msg)
+            logging.error(msg)
             return
-        logger.info(msg)
+        logging.info(msg)
 
     @property
     def is_running(self):
@@ -266,11 +255,11 @@ class View(tk.Frame):
                 raise ValueError("Please select a valid baudrate.")
             self.controller.open_connection(port=port, baudrate=baudrate, samples_per_channel=samples_per_channel)
             # self.keybindings_frame.grid()
-            logger.info(
+            logging.info(
                 f"Connected to port {port} with baudrate {baudrate} and {samples_per_channel} samples per channel."
             )
         except Exception as e:
-            logger.error(str(e))
+            logging.error(str(e))
 
     def update_ports(self, available_ports):
         """Update the available ports dropdown."""
@@ -354,7 +343,7 @@ class Model:
 
             except serial.SerialException as _:
                 self.close_connection()
-                logger.error("ESP32 disconnected! Restart the program, if you wish to continue!")
+                logging.error("ESP32 disconnected! Restart the program, if you wish to continue!")
                 return
 
             if not available_bytes:
@@ -389,7 +378,7 @@ class Model:
             bytes = self.serial_connection.read(available_bytes)
             return rest + bytes.decode()
         except UnicodeDecodeError:
-            logger.warning("Read unknown non-character bytes.")
+            logging.warning("Read unknown non-character bytes.")
             return None
 
     def update_dataframe(self, data_integers: list[list[int]], counter: int) -> None:
@@ -487,6 +476,19 @@ def on_close(model: Model, view: View, root: tk.Toplevel) -> None:
 
 
 if __name__ == "__main__":
-    logger.info("Starting Serial Recorder...")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        filename="log.log",
+        filemode="w",
+    )
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    logging.getLogger().addHandler(console_handler)
+    logging.getLogger("PIL").setLevel(logging.WARNING)
+    logging.getLogger("matplotlib").setLevel(logging.WARNING)
+
+    logging.info("Starting Serial Recorder...")
     main()
-    logger.info("Exiting...")
+    logging.info("Exiting...")
