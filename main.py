@@ -1,7 +1,8 @@
-#!/usr/bin/env python3
+#!/.venv/bin/env python3
 
 """
-Serial Data Viewer
+
+Python Serial Recorder
 
 This program is a graphical user interface (GUI) application that allows users to view and record data from a serial port in real-time.
 It follows the Model-View-Controller (MVC) design pattern to separate concerns and improve maintainability.
@@ -16,6 +17,10 @@ Features:
 - Displays real-time data from the serial port in a graph.
 - Allows users to freeze/unfreeze the data display.
 - Provides options to save the data as CSV, Excel, or JSON files.
+
+Author: Martin Siemienski Andersen, Aalborg University, Aalborg, Denmark
+Copyright (c) 2024 A Curious Clincal Programmer
+
 """
 
 import logging
