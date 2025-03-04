@@ -135,7 +135,10 @@ class Controller:
             return
         file_dialog = QFileDialog()
         file_path, _ = file_dialog.getSaveFileName(
-            None, "Save Timeseries", "", "Excel files (*.xlsx);;CSV files (*.csv);;JSON files (*.json);;All files (*.*)"
+            self.view,
+            "Save Timeseries",
+            "",
+            "Excel files (*.xlsx);;CSV files (*.csv);;JSON files (*.json);;All files (*.*)",
         )
         if file_path == "":
             return
@@ -171,7 +174,6 @@ class View(QWidget):
 
     def on_key_press(self, event: QKeyEvent):
         """Handle key press events."""
-        logging.info(event.key())
         if event.key() == Qt.Key_Space:  # pause / resume
             self.controller.snapshot_show()
         elif event.key() in (Qt.Key_S, Qt.Key_S):  # Save current snapshot (or freeze then save)
