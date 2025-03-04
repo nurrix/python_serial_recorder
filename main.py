@@ -289,7 +289,11 @@ class View(QWidget):
         # Create a QShortcut for the spacebar key press
         evt = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Space, Qt.NoModifier)
         space_shortcut = QShortcut(QKeySequence(Qt.Key_Space), self.master)
-        space_shortcut.activated.connect(lambda: self.on_key_press(evt))
+        space_shortcut.activated.connect(lambda evt=evt: self.on_key_press(evt))
+
+        evt = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_S, Qt.NoModifier)
+        s_shortcut = QShortcut(QKeySequence(Qt.Key_S), self.master)
+        s_shortcut.activated.connect(lambda evt=evt: self.on_key_press(evt))
 
         self.keyPressEvent = self.on_key_press
         self.port.setEnabled(False)
