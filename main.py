@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QLabel,
     QComboBox,
     QPushButton,
@@ -44,11 +45,15 @@ import serial
 import threading
 import time
 import pandas as pd
-import numpy as np
-import tkinter as tk
-from typing import Optional
 from matplotlib.lines import Line2D
 import serial.tools.list_ports as list_ports
+import darkdetect
+
+if darkdetect.isDark():
+    plt.style.use("https://github.com/dhaitz/matplotlib-stylesheets/raw/master/pitayasmoothie-dark.mplstyle")
+
+else:
+    plt.style.use("ggplot")
 
 
 def main() -> None:
@@ -56,14 +61,11 @@ def main() -> None:
     app = QApplication([])
     main_window = QMainWindow()
     main_window.setWindowTitle("Serial Data Viewer")
-    main_window.resize(800, 600)
+    main_window.resize(800, 800)
     model = Model()
     view = View(master=main_window)
     controller = Controller(model, view, update_rate_ms=100)
     view.set_controller(controller=controller)
-    # Create a QShortcut for the spacebar key press
-    space_shortcut = QShortcut(QKeySequence(Qt.Key_Space), main_window)
-    space_shortcut.activated.connect(controller.snapshot_show)
     main_window.setCentralWidget(view)
     main_window.setFocusPolicy(Qt.StrongFocus)  # Ensures widget captures all key events
     main_window.setFocus()  # Forces focus onto the widget
@@ -135,10 +137,7 @@ class Controller:
             return
         file_dialog = QFileDialog()
         file_path, _ = file_dialog.getSaveFileName(
-            self.view,
-            "Save Timeseries",
-            "",
-            "Excel files (*.xlsx);;CSV files (*.csv);;JSON files (*.json);;All files (*.*)",
+            None, "Save Timeseries", "", "Excel files (*.xlsx);;CSV files (*.csv);;JSON files (*.json);;All files (*.*)"
         )
         if file_path == "":
             return
@@ -166,6 +165,8 @@ class Controller:
 class View(QWidget):
     """View class to manage the graphical user interface."""
 
+    lines: list[Line2D] = []
+
     def __init__(self, master: QMainWindow) -> None:
         super().__init__(master)
         self.master = master
@@ -174,10 +175,15 @@ class View(QWidget):
 
     def on_key_press(self, event: QKeyEvent):
         """Handle key press events."""
-        if event.key() == Qt.Key_Space:  # pause / resume
-            self.controller.snapshot_show()
-        elif event.key() in (Qt.Key_S, Qt.Key_S):  # Save current snapshot (or freeze then save)
-            self.controller.save_snapshot()
+
+        match event.key():
+            case Qt.Key_Space:
+                # pause / resume
+                self.controller.snapshot_show()
+
+            case Qt.Key_S:
+                # Save current snapshot (or freeze then save)
+                self.controller.save_snapshot()
 
     def set_controller(self, controller: "Controller"):
         """Set the controller for the view."""
@@ -186,11 +192,18 @@ class View(QWidget):
     def setup_ui(self):
         """Set up the UI elements."""
 
-        control_layout = QVBoxLayout()
+        control_layout = QHBoxLayout()
         self.layout().addLayout(control_layout)
 
         selection_layout = QVBoxLayout()
         control_layout.addLayout(selection_layout)
+
+        keybindings_layout = QVBoxLayout()
+        control_layout.addLayout(keybindings_layout)
+
+        keybindings_layout.addWidget(
+            QLabel("Key Bindings:\n    [Space]: Freeze / Unfreeze\n    [S]: Save data to file")
+        )
 
         lbl = QLabel("Select COM Port:")
         selection_layout.addWidget(lbl)
@@ -213,26 +226,21 @@ class View(QWidget):
         self.samples_per_channel = QSpinBox()
         self.samples_per_channel.setRange(10, 100000)
         self.samples_per_channel.setSingleStep(100)
-        self.samples_per_channel.setValue(1000)
+        self.samples_per_channel.setValue(2000)
         selection_layout.addWidget(self.samples_per_channel)
 
         self.connect_button = QPushButton("Connect")
         self.connect_button.clicked.connect(self.on_connect)
         selection_layout.addWidget(self.connect_button)
 
-        keybindings_layout = QVBoxLayout()
-        control_layout.addLayout(keybindings_layout)
-
-        keybindings_layout.addWidget(QLabel("Key Bindings:"))
-        keybindings_layout.addWidget(QLabel("[Space]: Freeze / Unfreeze"))
-        keybindings_layout.addWidget(QLabel("[S]: Save data to file"))
+        # Set Matplotlib theme based on the OS theme
+        #
 
         self.fig, self.ax = plt.subplots()
         self.ax.set_title("Real-time ADC Data")
         self.ax.set_xlabel("Samples")
         self.ax.set_ylabel("ADC Output")
         self.ax.grid(True)
-        self.lines: list[Line2D] = []
         self.canvas = FigureCanvas(self.fig)
         self.layout().addWidget(self.canvas)
 
@@ -241,22 +249,25 @@ class View(QWidget):
 
     def display_data(self, data: pd.DataFrame):
         """Update the graph with new data."""
-        COLORS = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+        # COLORS = plt.rcParams["axes.prop_cycle"].by_key()["color"]
         if len(self.lines) != len(data.columns):
             for line in self.lines:
                 line.remove()
             self.lines.clear()
-            for idx, name in enumerate(data.columns):
-                line = Line2D(xdata=data.index, ydata=data[name], label=name, color=COLORS[idx % len(COLORS)])
+            for name in data.columns:
+                line = Line2D(xdata=data.index, ydata=data[name], label=name)
                 self.lines.append(line)
                 self.ax.add_line(line)
-            self.ax.legend(loc="upper left")
+
+            if not self.ax.get_legend():
+                self.ax.legend(loc="upper left")
         else:
             for name, line in zip(data.columns, self.lines):
                 line.set_data(data.index.to_list(), data[name])
         self.ax.relim()
         self.ax.autoscale_view()
         self.canvas.draw()
+        1
 
     def on_connect(self):
         """Connect to the selected COM port and baudrate."""
@@ -293,6 +304,12 @@ class View(QWidget):
 
     def update_ui_elements(self):
         """Disable buttons and dropdowns, and activate keybindings."""
+
+        # Create a QShortcut for the spacebar key press
+        evt = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Space, Qt.NoModifier)
+        space_shortcut = QShortcut(QKeySequence(Qt.Key_Space), self.master)
+        space_shortcut.activated.connect(lambda: self.on_key_press(evt))
+
         self.keyPressEvent = self.on_key_press
         self.port.setEnabled(False)
         self.baudrate.setEnabled(False)
@@ -334,7 +351,7 @@ class Model:
     read_thread: threading.Thread | None = None
     SAMPLES_PER_CHANNEL: int = 0
 
-    def open_connection(self, port: str, baudrate: int, samples_per_channel: int) -> tuple[bool, Optional[str]]:
+    def open_connection(self, port: str, baudrate: int, samples_per_channel: int) -> None:
         """Open a serial connection and start reading in a separate thread."""
         if self.is_connected:
             raise serial.SerialException("Already connected to a serial port.")
@@ -392,7 +409,7 @@ class Model:
         """Get the number of available bytes in the serial connection."""
         return self.serial_connection.in_waiting
 
-    def read_serial_data(self, available_bytes: int, rest: str) -> Optional[str]:
+    def read_serial_data(self, available_bytes: int, rest: str) -> str | None:
         """Read data from the serial connection and decode it."""
         try:
             bytes = self.serial_connection.read(available_bytes)
@@ -414,9 +431,11 @@ class Model:
         """Update the buffer with new data."""
         with self.__df_update_lock:
             if self.__buffer.shape[1] != data.shape[1]:
-                sz = (self.SAMPLES_PER_CHANNEL, data.shape[1])
                 self.__buffer = pd.DataFrame(
-                    np.zeros(sz), columns=data.columns, index=range(-self.SAMPLES_PER_CHANNEL, 0), dtype=int
+                    [[0] * data.shape[1]] * self.SAMPLES_PER_CHANNEL,
+                    columns=data.columns,
+                    index=range(-self.SAMPLES_PER_CHANNEL, 0),
+                    dtype=int,
                 )
             self.__buffer = pd.concat([self.__buffer, data], ignore_index=False)
             if len(self.__buffer) > self.SAMPLES_PER_CHANNEL:
@@ -488,11 +507,11 @@ def calculate_2D_matrix(data: list[list[int]]) -> tuple[int, int]:
     return num_rows, num_cols
 
 
-def on_close(model: Model, view: View, root: tk.Toplevel) -> None:
+def on_close(model: Model, view: View, root: QWidget) -> None:
     """Close the application and clean up resources."""
     model.close_connection()
     view.destroy()
-    root.quit()
+    root.destroy()
 
 
 if __name__ == "__main__":
