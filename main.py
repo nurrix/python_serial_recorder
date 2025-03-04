@@ -24,6 +24,22 @@ Copyright (c) 2024 A Curious Clincal Programmer
 """
 
 import logging
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QLabel,
+    QComboBox,
+    QPushButton,
+    QSpinBox,
+    QFileDialog,
+    QTextEdit,
+)
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QKeyEvent
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+import matplotlib.pyplot as plt
 import serial
 import threading
 import time
@@ -31,24 +47,23 @@ import pandas as pd
 import numpy as np
 import tkinter as tk
 from typing import Optional
-from tkinter import ttk, filedialog
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.lines import Line2D
-import matplotlib.pyplot as plt
 import serial.tools.list_ports as list_ports
-from tkinter.scrolledtext import ScrolledText
 
 
 def main() -> None:
     """Main function to set up the GUI and start the application."""
-    name = "Serial Data Viewer"
-    root = tk.Tk(screenName=name, baseName=name, className=name)
-    root.geometry(f"{int(root.winfo_screenwidth() // 2)}x{int(root.winfo_screenheight() // (3 / 2))}")
-    model, view = Model(), View(master=root)
+    app = QApplication([])
+    main_window = QMainWindow()
+    main_window.setWindowTitle("Serial Data Viewer")
+    main_window.resize(800, 600)
+    model = Model()
+    view = View(master=main_window)
     controller = Controller(model, view, update_rate_ms=100)
     view.set_controller(controller=controller)
-    root.protocol("WM_DELETE_WINDOW", lambda: on_close(model=model, view=view, root=root))
-    root.mainloop()
+    main_window.setCentralWidget(view)
+    main_window.show()
+    app.exec()
 
 
 class Controller:
@@ -57,19 +72,19 @@ class Controller:
     def __init__(self, model: "Model", view: "View", update_rate_ms: int = 100) -> None:
         self.model, self.view, self.is_frozen = model, view, False
         self.waiting_for_port_selection(dt_ms=update_rate_ms)
-        self.update_graph(dt_ms=update_rate_ms)
 
     def waiting_for_port_selection(self, dt_ms=100) -> None:
         """Update available ports until a connection is made."""
         if self.model.is_connected:
+            QTimer.singleShot(dt_ms, self.update_graph)
             return
         self.update_available_ports()
-        self.view.after(dt_ms, self.waiting_for_port_selection)
+        QTimer.singleShot(dt_ms, self.waiting_for_port_selection)
 
     def update_available_ports(self) -> list[str]:
         """Get the list of available COM ports and update the view."""
         available_ports = self.model.get_available_ports()
-        self.view.after(0, lambda available_ports=available_ports: self.view.update_ports(available_ports))
+        QTimer.singleShot(100, lambda available_ports=available_ports: self.view.update_ports(available_ports))
 
     def open_connection(self, port: str, baudrate: int, samples_per_channel: int) -> None:
         """Open a serial connection and update the UI elements."""
@@ -77,27 +92,21 @@ class Controller:
         self.SAMPLES_PER_CHANNEL = samples_per_channel
         self.view.update_ui_elements()
 
-    def update_graph(self, dt_ms=100) -> None:
+    def update_graph(self, dt_ms=1000 * 1 / 50) -> None:
         """Create a thread to periodically update data if new data is available."""
 
         def graph_updating_thread():
-            while not self.model.is_connected:
-                time.sleep(dt_ms / 1000.0)
+            if self.model.is_disconnected:
+                return
 
-            while self.model.is_connected:
-                t1 = time.time()
-                try:
-                    if self.view.winfo_ismapped():
-                        df = self.model.get_snapshot(is_frozen=self.is_frozen)
-                        if df is not None and not df.empty:
-                            self.view.after(0, lambda: self.view.display_data(data=df))
-                except Exception as e:
-                    logging.error(f"Stopped graph updater due to error.\n{e}")
-                    return
-                dt = time.time() - t1
-                time.sleep(max(dt_ms / 1000.0 - dt, 0))
+            if self.view.isVisible():
+                df = self.model.get_snapshot(is_frozen=self.is_frozen)
+                if df is not None and not df.empty:
+                    self.view.display_data(df)
 
-        threading.Thread(target=graph_updating_thread, name="update_graph", daemon=True).start()
+            QTimer.singleShot(dt_ms, graph_updating_thread)
+
+        QTimer.singleShot(dt_ms, graph_updating_thread)
 
     def snapshot_show(self):
         """Toggle freezing and unfreezing of the data display."""
@@ -110,7 +119,7 @@ class Controller:
         """Save the current snapshot to a file."""
         if self.is_running:
             self.snapshot_show()
-            self.view.after(0, self.save_snapshot)
+            QTimer.singleShot(0, self.save_snapshot)
             return
 
         df = self.model.get_snapshot(is_frozen=self.is_frozen)
@@ -119,18 +128,12 @@ class Controller:
             logging.error("Nothing to save, unfreezing.")
             logging.warning("Attempted to save an empty snapshot.")
             return
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".xlsx",
-            filetypes=[
-                ("Excel files", "*.xlsx"),
-                ("CSV files", "*.csv"),
-                ("JSON files", "*.json"),
-                ("All files", "*.*"),
-            ],
-            title="Save Timeseries",
+        file_dialog = QFileDialog()
+        file_path, _ = file_dialog.getSaveFileName(
+            None, "Save Timeseries", "", "Excel files (*.xlsx);;CSV files (*.csv);;JSON files (*.json);;All files (*.*)"
         )
         if file_path == "":
-            pass
+            return
         if file_path.endswith(".csv"):
             df.to_csv(file_path, index=True)
             msg = f"Data saved as CSV to {file_path}"
@@ -152,22 +155,21 @@ class Controller:
         return not self.is_frozen
 
 
-class View(tk.Frame):
+class View(QWidget):
     """View class to manage the graphical user interface."""
 
-    def __init__(self, master: tk.Toplevel) -> None:
+    def __init__(self, master: QMainWindow) -> None:
         super().__init__(master)
         self.master = master
+        self.setLayout(QVBoxLayout())
         self.setup_ui()
-        self.pack(fill="both", expand=True)
 
-    def on_key_press(self, event: tk.Event):
+    def on_key_press(self, event: QKeyEvent):
         """Handle key press events."""
-        match event.keysym:
-            case "space":  # pause / resume
-                self.controller.snapshot_show()
-            case "s" | "S":  # Save current snapshot (or freeze then save)
-                self.after(0, self.controller.save_snapshot)
+        if event.key() == Qt.Key_Space:  # pause / resume
+            self.controller.snapshot_show()
+        elif event.key() in (Qt.Key_S, Qt.Key_S):  # Save current snapshot (or freeze then save)
+            self.controller.save_snapshot()
 
     def set_controller(self, controller: "Controller"):
         """Set the controller for the view."""
@@ -176,57 +178,61 @@ class View(tk.Frame):
     def setup_ui(self):
         """Set up the UI elements."""
 
-        control_frame = tk.Frame(self)
-        control_frame.pack(pady=10)
+        control_layout = QVBoxLayout()
+        self.layout().addLayout(control_layout)
 
-        selection_frame = tk.Frame(control_frame)
-        selection_frame.grid(row=0, column=0, rowspan=4, padx=5, pady=5, sticky="n")
+        selection_layout = QVBoxLayout()
+        control_layout.addLayout(selection_layout)
 
-        lbl = tk.Label(selection_frame, text="Select COM Port:")
-        lbl.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        lbl = QLabel("Select COM Port:")
+        selection_layout.addWidget(lbl)
 
-        self.port = ttk.Combobox(selection_frame, state="readonly", width=20)
-        self.port.grid(row=0, column=1, padx=5, pady=5)
+        self.port = QComboBox()
+        selection_layout.addWidget(self.port)
 
-        lbl = tk.Label(selection_frame, text="Select Baudrate:")
-        lbl.grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        lbl = QLabel("Select Baudrate:")
+        selection_layout.addWidget(lbl)
 
         BAUDRATE_OPTIONS = [9600, 115200, 256000, 512000, 921600]
-        self.baudrate = ttk.Combobox(selection_frame, values=BAUDRATE_OPTIONS, state="readonly", width=20)
-        self.baudrate.set(921600)
-        self.baudrate.grid(row=1, column=1, padx=5, pady=5)
+        self.baudrate = QComboBox()
+        self.baudrate.addItems(map(str, BAUDRATE_OPTIONS))
+        self.baudrate.setCurrentText("921600")
+        selection_layout.addWidget(self.baudrate)
 
-        lbl = tk.Label(selection_frame, text="Select Number of samples (per channel):")
-        lbl.grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        lbl = QLabel("Select Number of samples (per channel):")
+        selection_layout.addWidget(lbl)
 
-        self.samples_per_channel = tk.IntVar(self, value=1000)
-        self.samples_per_channel_spin = tk.Spinbox(
-            selection_frame, from_=10, to=100_000, increment=100, textvariable=self.samples_per_channel
-        )
-        self.samples_per_channel_spin.grid(row=2, column=1, padx=5, pady=5)
-        self.connect_button = tk.Button(selection_frame, text="Connect", command=self.on_connect, width=20)
-        self.connect_button.grid(row=3, column=0, columnspan=2, pady=10)
-        self.keybindings_frame = tk.Frame(control_frame)
-        self.keybindings_frame.grid(row=0, column=1, padx=10, pady=5, sticky="n")
-        # self.keybindings_frame.grid_remove()
-        tk.Label(self.keybindings_frame, text="Key Bindings:").pack(pady=5)
-        tk.Label(self.keybindings_frame, text="[Space]: Freeze / Unfreeze").pack(pady=2)
-        tk.Label(self.keybindings_frame, text="[S]: Save data to file").pack(pady=2)
+        self.samples_per_channel = QSpinBox()
+        self.samples_per_channel.setRange(10, 100000)
+        self.samples_per_channel.setSingleStep(100)
+        self.samples_per_channel.setValue(1000)
+        selection_layout.addWidget(self.samples_per_channel)
+
+        self.connect_button = QPushButton("Connect")
+        self.connect_button.clicked.connect(self.on_connect)
+        selection_layout.addWidget(self.connect_button)
+
+        keybindings_layout = QVBoxLayout()
+        control_layout.addLayout(keybindings_layout)
+
+        keybindings_layout.addWidget(QLabel("Key Bindings:"))
+        keybindings_layout.addWidget(QLabel("[Space]: Freeze / Unfreeze"))
+        keybindings_layout.addWidget(QLabel("[S]: Save data to file"))
+
         self.fig, self.ax = plt.subplots()
         self.ax.set_title("Real-time ADC Data")
         self.ax.set_xlabel("Samples")
         self.ax.set_ylabel("ADC Output")
         self.ax.grid(True)
         self.lines: list[Line2D] = []
-        self.canvas = FigureCanvasTkAgg(self.fig, self)
-        self.canvas.get_tk_widget().pack(pady=0, fill="both", expand=True)
+        self.canvas = FigureCanvas(self.fig)
+        self.layout().addWidget(self.canvas)
 
         # logging area
         self.setup_logger()
 
     def display_data(self, data: pd.DataFrame):
         """Update the graph with new data."""
-
         COLORS = plt.rcParams["axes.prop_cycle"].by_key()["color"]
         if len(self.lines) != len(data.columns):
             for line in self.lines:
@@ -248,16 +254,15 @@ class View(tk.Frame):
         """Connect to the selected COM port and baudrate."""
         try:
             port, baudrate, samples_per_channel = (
-                self.port.get(),
-                int(self.baudrate.get()),
-                self.samples_per_channel.get(),
+                self.port.currentText(),
+                int(self.baudrate.currentText()),
+                self.samples_per_channel.value(),
             )
             if not port:
                 raise ValueError("Please select a COM port.")
             if baudrate <= 0:
                 raise ValueError("Please select a valid baudrate.")
             self.controller.open_connection(port=port, baudrate=baudrate, samples_per_channel=samples_per_channel)
-            # self.keybindings_frame.grid()
             logging.info(
                 f"Connected to port {port} with baudrate {baudrate} and {samples_per_channel} samples per channel."
             )
@@ -266,44 +271,44 @@ class View(tk.Frame):
 
     def update_ports(self, available_ports):
         """Update the available ports dropdown."""
-        if set(available_ports) == set(self.port["values"]):
+        if set(available_ports) == set(self.port.itemText(i) for i in range(self.port.count())):
             return
-        selected_port = self.port.get()
-        self.port["values"] = available_ports
+        selected_port = self.port.currentText()
+        self.port.clear()
+        self.port.addItems(available_ports)
         if selected_port in available_ports:
-            self.port.set(selected_port)
+            self.port.setCurrentText(selected_port)
         elif available_ports:
-            self.port.set(available_ports[-1])
+            self.port.setCurrentText(available_ports[-1])
         else:
-            self.port.set("")
+            self.port.setCurrentText("")
 
     def update_ui_elements(self):
         """Disable buttons and dropdowns, and activate keybindings."""
-        self.master.bind("<KeyPress>", self.on_key_press)
-        self.port.config(state="disabled")
-        self.baudrate.config(state="disabled")
-        self.connect_button.config(state="disabled")
-        self.samples_per_channel_spin.config(state="disabled")
+        self.master.keyPressEvent = self.on_key_press
+        self.port.setEnabled(False)
+        self.baudrate.setEnabled(False)
+        self.connect_button.setEnabled(False)
+        self.samples_per_channel.setEnabled(False)
 
     def setup_logger(self):
-        """Set up the logging system to write to the Tkinter Text widget."""
-        self.log_area = ScrolledText(self, height=15, width=70, state="disabled")
-        self.log_area.pack(pady=10, fill=tk.BOTH)
+        """Set up the logging system to write to the QTextEdit widget."""
+        self.log_area = QTextEdit()
+        self.log_area.setReadOnly(True)
+        self.layout().addWidget(self.log_area)
 
         # Create a custom logging handler
         class TextHandler(logging.Handler):
-            def __init__(self, widget: ScrolledText):
+            def __init__(self, widget: QTextEdit):
                 super().__init__()
                 self.widget = widget
 
             def emit(self, record):
-                if not self.widget.winfo_exists():
+                if not self.widget.isVisible():
                     return
                 log_entry = self.format(record) + "\n"
-                self.widget.config(state="normal")
-                self.widget.insert(tk.END, log_entry)
-                self.widget.config(state="disabled")
-                self.widget.yview(tk.END)  # Auto-scroll
+                self.widget.append(log_entry)
+                self.widget.verticalScrollBar().setValue(self.widget.verticalScrollBar().maximum())
 
         self.text_handler = text_handler = TextHandler(self.log_area)
         text_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
@@ -314,9 +319,12 @@ class View(tk.Frame):
 class Model:
     """Model class to handle data and serial communication."""
 
-    def __init__(self):
-        self.serial_connection, self.read_thread, self.SAMPLES_PER_CHANNEL = None, None, None
-        self.__buffer, self.__df_update_lock = pd.DataFrame(), threading.Lock()
+    __snapshot = pd.DataFrame()
+    __buffer = pd.DataFrame()
+    __df_update_lock = threading.Lock()
+    serial_connection: serial.Serial | None = None
+    read_thread: threading.Thread | None = None
+    SAMPLES_PER_CHANNEL: int = 0
 
     def open_connection(self, port: str, baudrate: int, samples_per_channel: int) -> tuple[bool, Optional[str]]:
         """Open a serial connection and start reading in a separate thread."""
@@ -420,9 +428,9 @@ class Model:
         with self.__df_update_lock:
             self.__snapshot = self.__buffer.copy()
 
-    def get_snapshot(self, is_frozen: bool) -> pd.DataFrame | None:
+    def get_snapshot(self, is_frozen: bool) -> pd.DataFrame:
         """Return a snapshot of the data or the buffer."""
-        if not self.is_connected:
+        if self.is_disconnected:
             return self.__snapshot.copy()
         with self.__df_update_lock:
             return self.__snapshot.copy() if is_frozen else self.__buffer.copy()
