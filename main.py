@@ -135,26 +135,7 @@ class Controller:
             logging.error("Nothing to save, unfreezing.")
             logging.warning("Attempted to save an empty snapshot.")
             return
-        file_dialog = QFileDialog()
-        file_path, _ = file_dialog.getSaveFileName(
-            None, "Save Timeseries", "", "Excel files (*.xlsx);;CSV files (*.csv);;JSON files (*.json);;All files (*.*)"
-        )
-        if file_path == "":
-            return
-        if file_path.endswith(".csv"):
-            df.to_csv(file_path, index=True)
-            msg = f"Data saved as CSV to {file_path}"
-        elif file_path.endswith(".xlsx"):
-            df.to_excel(file_path, index=True)
-            msg = f"Data saved as Excel to {file_path}"
-        elif file_path.endswith(".json"):
-            df.to_json(file_path, orient="records", lines=True)
-            msg = f"Data saved as JSON to {file_path}"
-        else:
-            msg = "Invalid file format. Please save as CSV, Excel, or JSON."
-            logging.error(msg)
-            return
-        logging.info(msg)
+        QTimer.singleShot(1, lambda: open_filesave_dialog(df))
 
     @property
     def is_running(self):
@@ -512,6 +493,29 @@ def on_close(model: Model, view: View, root: QWidget) -> None:
     model.close_connection()
     view.destroy()
     root.destroy()
+
+
+def open_filesave_dialog(df: pd.DataFrame):
+    file_dialog = QFileDialog()
+    file_path, _ = file_dialog.getSaveFileName(
+        None, "Save Timeseries", "", "Excel files (*.xlsx);;CSV files (*.csv);;JSON files (*.json);;All files (*.*)"
+    )
+    if file_path == "":
+        return
+    if file_path.endswith(".csv"):
+        df.to_csv(file_path, index=True)
+        msg = f"Data saved as CSV to {file_path}"
+    elif file_path.endswith(".xlsx"):
+        df.to_excel(file_path, index=True)
+        msg = f"Data saved as Excel to {file_path}"
+    elif file_path.endswith(".json"):
+        df.to_json(file_path, orient="records", lines=True)
+        msg = f"Data saved as JSON to {file_path}"
+    else:
+        msg = "Invalid file format. Please save as CSV, Excel, or JSON."
+        logging.error(msg)
+        return
+    logging.info(msg)
 
 
 if __name__ == "__main__":
