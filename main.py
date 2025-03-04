@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (
     QTextEdit,
 )
 from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtGui import QKeyEvent, QKeySequence, QShortcut
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
 import serial
@@ -61,7 +61,12 @@ def main() -> None:
     view = View(master=main_window)
     controller = Controller(model, view, update_rate_ms=100)
     view.set_controller(controller=controller)
+    # Create a QShortcut for the spacebar key press
+    space_shortcut = QShortcut(QKeySequence(Qt.Key_Space), main_window)
+    space_shortcut.activated.connect(controller.snapshot_show)
     main_window.setCentralWidget(view)
+    main_window.setFocusPolicy(Qt.StrongFocus)  # Ensures widget captures all key events
+    main_window.setFocus()  # Forces focus onto the widget
     main_window.show()
     app.exec()
 
@@ -166,6 +171,7 @@ class View(QWidget):
 
     def on_key_press(self, event: QKeyEvent):
         """Handle key press events."""
+        logging.info(event.key())
         if event.key() == Qt.Key_Space:  # pause / resume
             self.controller.snapshot_show()
         elif event.key() in (Qt.Key_S, Qt.Key_S):  # Save current snapshot (or freeze then save)
@@ -285,7 +291,7 @@ class View(QWidget):
 
     def update_ui_elements(self):
         """Disable buttons and dropdowns, and activate keybindings."""
-        self.master.keyPressEvent = self.on_key_press
+        self.keyPressEvent = self.on_key_press
         self.port.setEnabled(False)
         self.baudrate.setEnabled(False)
         self.connect_button.setEnabled(False)
@@ -306,7 +312,7 @@ class View(QWidget):
             def emit(self, record):
                 if not self.widget.isVisible():
                     return
-                log_entry = self.format(record) + "\n"
+                log_entry = self.format(record)
                 self.widget.append(log_entry)
                 self.widget.verticalScrollBar().setValue(self.widget.verticalScrollBar().maximum())
 
