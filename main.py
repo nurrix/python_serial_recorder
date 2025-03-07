@@ -99,10 +99,10 @@ class Controller:
         self.update_available_ports()
         QTimer.singleShot(dt_ms, self.waiting_for_port_selection)
 
-    def update_available_ports(self) -> list[str]:
+    def update_available_ports(self, dt_ms=100) -> list[str]:
         """Get the list of available COM ports and update the view."""
         available_ports = self.model.get_available_ports()
-        QTimer.singleShot(100, lambda available_ports=available_ports: self.view.update_ports(available_ports))
+        QTimer.singleShot(dt_ms, lambda available_ports=available_ports: self.view.update_ports(available_ports))
 
     def open_connection(self, port: str, baudrate: int, samples_per_channel: int) -> None:
         """Open a serial connection and update the UI elements."""
@@ -325,16 +325,16 @@ class View(QWidget):
                 self.widget = widget
 
             def emit(self, record):
-                if not self.widget.isVisible():
+                if not self.widget.parent().isVisible():
                     return
                 log_entry = self.format(record)
                 self.widget.append(log_entry)
                 self.widget.verticalScrollBar().setValue(self.widget.verticalScrollBar().maximum())
 
-        self.text_handler = text_handler = TextHandler(self.log_area)
+        text_handler = text_handler = TextHandler(self.log_area)
         text_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
 
-        logging.getLogger().addHandler(self.text_handler)
+        logging.getLogger().addHandler(text_handler)
 
 
 class Model:
