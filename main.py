@@ -1,5 +1,4 @@
 #!/.venv/bin/env python3
-
 """
 
 Python Serial Recorder
@@ -23,31 +22,43 @@ Copyright (c) 2024 A Curious Clincal Programmer
 
 """
 
-import logging
-from PySide6.QtWidgets import (
-    QApplication,
-    QMainWindow,
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QComboBox,
-    QPushButton,
-    QSpinBox,
-    QFileDialog,
-    QTextEdit,
-)
-from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QKeyEvent, QKeySequence, QShortcut
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-import matplotlib.pyplot as plt
-import serial
-import threading
-import time
-import pandas as pd
-from matplotlib.lines import Line2D
-import serial.tools.list_ports as list_ports
-import darkdetect
+try:
+    import logging
+    from PySide6.QtWidgets import (
+        QApplication,
+        QMainWindow,
+        QWidget,
+        QVBoxLayout,
+        QHBoxLayout,
+        QLabel,
+        QComboBox,
+        QPushButton,
+        QSpinBox,
+        QFileDialog,
+        QTextEdit,
+    )
+    from PySide6.QtCore import QTimer, Qt
+    from PySide6.QtGui import QKeyEvent, QKeySequence, QShortcut
+    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+    import matplotlib.pyplot as plt
+    import serial
+    import threading
+    import time
+    import pandas as pd
+    from matplotlib.lines import Line2D
+    import serial.tools.list_ports as list_ports
+    import darkdetect
+except ImportError as e:
+
+    import sys
+    sys.stdout.write(f"Error importing module: {e}\n")
+    # Verify that the version of python is 3.13.x
+    sys.stdout.write(f"Python version: {sys.version_info[0]}.{sys.version_info[1]}\n")
+    required_version = (3, 13, 2)
+    # Verify that the version of python is 3.13.2
+    if sys.version_info[:3] != required_version:
+        sys.stderr.write(f"Python {required_version[0]}.{required_version[1]}.{required_version[2]} is required.\n")
+        sys.exit(1)
 
 if darkdetect.isDark():
     plt.style.use("https://github.com/dhaitz/matplotlib-stylesheets/raw/master/pitayasmoothie-dark.mplstyle")
@@ -527,7 +538,6 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
         filename="log.log",
-        filemode="w",
     )
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
