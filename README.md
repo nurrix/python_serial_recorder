@@ -35,7 +35,6 @@ This program works with Python 3.13.2. However, it is very possible that it will
    - MacOS
    ```bash
       brew install python
-      brew install python-tk
    ```
    - Windows
    ```bash 
