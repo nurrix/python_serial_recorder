@@ -22,8 +22,9 @@ Copyright (c) 2024 A Curious Clincal Programmer
 
 """
 
+import logging
+
 try:
-    import logging
     from PySide6.QtWidgets import (
         QApplication,
         QMainWindow,
@@ -48,16 +49,16 @@ try:
     from matplotlib.lines import Line2D
     import serial.tools.list_ports as list_ports
     import darkdetect
-except ImportError as e:
 
+except ImportError as e:
     import sys
-    sys.stdout.write(f"Error importing module: {e}\n")
+
+    logging.error(f"Error importing module: {e}\n")
     # Verify that the version of python is 3.13.x
-    sys.stdout.write(f"Python version: {sys.version_info[0]}.{sys.version_info[1]}\n")
     required_version = (3, 13, 2)
     # Verify that the version of python is 3.13.2
     if sys.version_info[:3] != required_version:
-        sys.stderr.write(f"Python {required_version[0]}.{required_version[1]}.{required_version[2]} is required.\n")
+        logging.error(f"Python {required_version[0]}.{required_version[1]}.{required_version[2]} is required.\n")
         sys.exit(1)
 
 if darkdetect.isDark():
@@ -331,6 +332,10 @@ class View(QWidget):
                 self.widget.append(log_entry)
                 self.widget.verticalScrollBar().setValue(self.widget.verticalScrollBar().maximum())
 
+            # Destructor, remember to remove self from the logger
+            def __del__(self):
+                logging.getLogger().removeHandler(self)
+
         text_handler = text_handler = TextHandler(self.log_area)
         text_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
 
@@ -506,8 +511,7 @@ def calculate_2D_matrix(data: list[list[int]]) -> tuple[int, int]:
 def on_close(model: Model, view: View, root: QWidget) -> None:
     """Close the application and clean up resources."""
     model.close_connection()
-    view.destroy()
-    root.destroy()
+    root.close()
 
 
 def open_filesave_dialog(df: pd.DataFrame):
@@ -527,8 +531,7 @@ def open_filesave_dialog(df: pd.DataFrame):
         df.to_json(file_path, orient="records", lines=True)
         msg = f"Data saved as JSON to {file_path}"
     else:
-        msg = "Invalid file format. Please save as CSV, Excel, or JSON."
-        logging.error(msg)
+        logging.error("Invalid file format. Please save as CSV, Excel, or JSON.")
         return
     logging.info(msg)
 
