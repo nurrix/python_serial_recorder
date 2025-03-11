@@ -508,12 +508,6 @@ def calculate_2D_matrix(data: list[list[int]]) -> tuple[int, int]:
     return num_rows, num_cols
 
 
-def on_close(model: Model, view: View, root: QWidget) -> None:
-    """Close the application and clean up resources."""
-    model.close_connection()
-    root.close()
-
-
 def open_filesave_dialog(df: pd.DataFrame):
     file_dialog = QFileDialog()
     file_path, _ = file_dialog.getSaveFileName(
