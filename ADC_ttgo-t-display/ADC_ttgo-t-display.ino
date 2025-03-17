@@ -9,7 +9,7 @@ hw_timer_t* timer = NULL;
  */
 #define BAUDRATE 115200  // bits (not bytes) transfered per second.
 
-#define MICROSECONDS_BETWEEN_SAMPLES 1000  // 1000 microseconds = 1 msec
+#define MICROSECONDS_BETWEEN_SAMPLES 100000  // 1000 microseconds = 1 msec
 uint8_t channels[] = { 2 };                // specify the gpio# where there is adc functionality.
 
 
