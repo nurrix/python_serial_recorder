@@ -482,10 +482,12 @@ class Model:
 def process_serial_data(ascii_data: str) -> tuple[str, list[list[int]]]:
     """Process the ASCII data read from the serial connection."""
     row_asci_data = ascii_data.split("\r\n")
-    rest = row_asci_data[-1] # Last row is rest
     if len(row_asci_data) < 3:
-        # If less than 3 samples has been generated, we cant proceed, so return all the data as rest, and nothing as data_integers
+        # Requires at least 3 ready samples, to process. otherwise return all samples as rest
         return ascii_data, []
+    
+
+    rest = row_asci_data[-1] # Last row is rest
     data = row_asci_data[:-2]
     data_filtered = filter(str_contains_only_numbers, data)
     data_integers = list(map(str_to_intarray, data_filtered))
