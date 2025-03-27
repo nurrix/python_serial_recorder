@@ -242,13 +242,13 @@ class View(QWidget):
 
     def display_data(self, data: pd.DataFrame):
         """Update the graph with new data."""
-        # COLORS = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+        COLORS = plt.rcParams["axes.prop_cycle"].by_key()["color"]
         if len(self.lines) != len(data.columns):
             for line in self.lines:
                 line.remove()
             self.lines.clear()
-            for name in data.columns:
-                line = Line2D(xdata=data.index, ydata=data[name], label=name)
+            for  idx, name in enumerate(data.columns):
+                line = Line2D(xdata=data.index, ydata=data[name], label=name, color=COLORS[idx% len(COLORS)])
                 self.lines.append(line)
                 self.ax.add_line(line)
 
