@@ -1,4 +1,3 @@
-#!/.venv/bin/env python3
 """
 
 Python Serial Recorder
@@ -40,7 +39,7 @@ try:
     )
     from PySide6.QtCore import QTimer, Qt
     from PySide6.QtGui import QKeyEvent, QKeySequence, QShortcut
-    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+    from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
     import matplotlib.pyplot as plt
     import serial
     import threading
@@ -58,11 +57,14 @@ except ImportError as e:
     required_version = (3, 13, 2)
     # Verify that the version of python is 3.13.2
     if sys.version_info[:3] != required_version:
-        logging.error(f"Python {required_version[0]}.{required_version[1]}.{required_version[2]} is required.\n")
-        sys.exit(1)
+        logging.error(f"Python {'.'.join(map(str, required_version))} is required.\n")
+    logging.error("Run 'pip install -r requirements.txt'")
+    sys.exit(1)
 
 if darkdetect.isDark():
-    plt.style.use("https://github.com/dhaitz/matplotlib-stylesheets/raw/master/pitayasmoothie-dark.mplstyle")
+    plt.style.use(
+        "https://github.com/dhaitz/matplotlib-stylesheets/raw/master/pitayasmoothie-dark.mplstyle"
+    )
 
 else:
     plt.style.use("ggplot")
@@ -103,9 +105,16 @@ class Controller:
     def update_available_ports(self, dt_ms=100) -> list[str]:
         """Get the list of available COM ports and update the view."""
         available_ports = self.model.get_available_ports()
-        QTimer.singleShot(dt_ms, lambda available_ports=available_ports: self.view.update_ports(available_ports))
+        QTimer.singleShot(
+            dt_ms,
+            lambda available_ports=available_ports: self.view.update_ports(
+                available_ports
+            ),
+        )
 
-    def open_connection(self, port: str, baudrate: int, samples_per_channel: int) -> None:
+    def open_connection(
+        self, port: str, baudrate: int, samples_per_channel: int
+    ) -> None:
         """Open a serial connection and update the UI elements."""
         self.model.open_connection(port, baudrate, samples_per_channel)
         self.SAMPLES_PER_CHANNEL = samples_per_channel
@@ -195,7 +204,9 @@ class View(QWidget):
         control_layout.addLayout(keybindings_layout)
 
         keybindings_layout.addWidget(
-            QLabel("Key Bindings:\n    [Space]: Freeze / Unfreeze\n    [S]: Save data to file")
+            QLabel(
+                "Key Bindings:\n    [Space]: Freeze / Unfreeze\n    [S]: Save data to file"
+            )
         )
 
         lbl = QLabel("Select COM Port:")
@@ -247,8 +258,13 @@ class View(QWidget):
             for line in self.lines:
                 line.remove()
             self.lines.clear()
-            for  idx, name in enumerate(data.columns):
-                line = Line2D(xdata=data.index, ydata=data[name], label=name, color=COLORS[idx% len(COLORS)])
+            for idx, name in enumerate(data.columns):
+                line = Line2D(
+                    xdata=data.index,
+                    ydata=data[name],
+                    label=name,
+                    color=COLORS[idx % len(COLORS)],
+                )
                 self.lines.append(line)
                 self.ax.add_line(line)
 
@@ -274,7 +290,9 @@ class View(QWidget):
                 raise ValueError("Please select a COM port.")
             if baudrate <= 0:
                 raise ValueError("Please select a valid baudrate.")
-            self.controller.open_connection(port=port, baudrate=baudrate, samples_per_channel=samples_per_channel)
+            self.controller.open_connection(
+                port=port, baudrate=baudrate, samples_per_channel=samples_per_channel
+            )
             logging.info(
                 f"Connected to port {port} with baudrate {baudrate} and {samples_per_channel} samples per channel."
             )
@@ -283,7 +301,9 @@ class View(QWidget):
 
     def update_ports(self, available_ports):
         """Update the available ports dropdown."""
-        if set(available_ports) == set(self.port.itemText(i) for i in range(self.port.count())):
+        if set(available_ports) == set(
+            self.port.itemText(i) for i in range(self.port.count())
+        ):
             return
         selected_port = self.port.currentText()
         self.port.clear()
@@ -330,14 +350,18 @@ class View(QWidget):
                     return
                 log_entry = self.format(record)
                 self.widget.append(log_entry)
-                self.widget.verticalScrollBar().setValue(self.widget.verticalScrollBar().maximum())
+                self.widget.verticalScrollBar().setValue(
+                    self.widget.verticalScrollBar().maximum()
+                )
 
             # Destructor, remember to remove self from the logger
             def __del__(self):
                 logging.getLogger().removeHandler(self)
 
         text_handler = text_handler = TextHandler(self.log_area)
-        text_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+        text_handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+        )
 
         logging.getLogger().addHandler(text_handler)
 
@@ -352,7 +376,9 @@ class Model:
     read_thread: threading.Thread | None = None
     SAMPLES_PER_CHANNEL: int = 0
 
-    def open_connection(self, port: str, baudrate: int, samples_per_channel: int) -> None:
+    def open_connection(
+        self, port: str, baudrate: int, samples_per_channel: int
+    ) -> None:
         """Open a serial connection and start reading in a separate thread."""
         if self.is_connected:
             raise serial.SerialException("Already connected to a serial port.")
@@ -360,13 +386,17 @@ class Model:
             self.serial_connection = serial.Serial(port, baudrate)
             self.SAMPLES_PER_CHANNEL = samples_per_channel
             self.read_thread = threading.Thread(
-                target=self.start_continuous_read_from_serial, name="SerialReader", daemon=True
+                target=self.start_continuous_read_from_serial,
+                name="SerialReader",
+                daemon=True,
             )
             self.read_thread.start()
         except serial.SerialException as _:
             raise serial.SerialException("Could not open serial connection")
 
-    def start_continuous_read_from_serial(self, updaterate_sec: float = 1.0 / 50.0, failure_duration: float = 3.0):
+    def start_continuous_read_from_serial(
+        self, updaterate_sec: float = 1.0 / 50.0, failure_duration: float = 3.0
+    ):
         """Continuously read data from the serial port in a background thread."""
         rest, counter = "", 0
         if self.is_connected:
@@ -381,7 +411,9 @@ class Model:
 
             except serial.SerialException as _:
                 self.close_connection()
-                logging.error("ESP32 disconnected! Restart the program, if you wish to continue!")
+                logging.error(
+                    "ESP32 disconnected! Restart the program, if you wish to continue!"
+                )
                 return
 
             if not available_bytes:
@@ -425,7 +457,11 @@ class Model:
         if num_rows == 0 or num_channels == 0:
             return
         column_names = [f"Ch{i}" for i in range(num_channels)]
-        dfnew = pd.DataFrame(data_integers, index=range(counter, counter + num_rows), columns=column_names)
+        dfnew = pd.DataFrame(
+            data_integers,
+            index=range(counter, counter + num_rows),
+            columns=column_names,
+        )
         self.update_df(data=dfnew)
 
     def update_df(self, data: pd.DataFrame) -> None:
@@ -466,7 +502,11 @@ class Model:
     @property
     def is_connected(self) -> bool:
         """Check if the serial connection is established."""
-        b = self.serial_connection and self.serial_connection.is_open and self.read_thread.is_alive()
+        b = (
+            self.serial_connection
+            and self.serial_connection.is_open
+            and self.read_thread.is_alive()
+        )
         return b
 
     @property
@@ -485,9 +525,8 @@ def process_serial_data(ascii_data: str) -> tuple[str, list[list[int]]]:
     if len(row_asci_data) < 3:
         # Requires at least 3 ready samples, to process. otherwise return all samples as rest
         return ascii_data, []
-    
 
-    rest = row_asci_data[-1] # Last row is rest
+    rest = row_asci_data[-1]  # Last row is rest
     data = row_asci_data[:-2]
     data_filtered = filter(str_contains_only_numbers, data)
     data_integers = list(map(str_to_intarray, data_filtered))
@@ -514,7 +553,10 @@ def calculate_2D_matrix(data: list[list[int]]) -> tuple[int, int]:
 def open_filesave_dialog(df: pd.DataFrame):
     file_dialog = QFileDialog()
     file_path, _ = file_dialog.getSaveFileName(
-        None, "Save Timeseries", "", "Excel files (*.xlsx);;CSV files (*.csv);;JSON files (*.json);;All files (*.*)"
+        None,
+        "Save Timeseries",
+        "",
+        "Excel files (*.xlsx);;CSV files (*.csv);;JSON files (*.json);;All files (*.*)",
     )
     if file_path == "":
         return
@@ -542,7 +584,9 @@ if __name__ == "__main__":
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(
-        logging.Formatter("%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s")
+        logging.Formatter(
+            "%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s"
+        )
     )
     logging.getLogger().addHandler(console_handler)
     logging.getLogger("PIL").setLevel(logging.WARNING)
